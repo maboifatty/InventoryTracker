@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inventory Master</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <section class="auth-screen" id="authScreen">
+    <div class="auth-card">
+      <div class="auth-brand"><span class="brand-mark">IM</span><div><strong>Inventory Master</strong><small>Sign in to manage stock</small></div></div>
+      <p class="eyebrow" id="authMode">WELCOME BACK</p>
+      <h1 id="authTitle">Log in</h1>
+      <p class="auth-copy" id="authCopy">Enter your user name and password to open the inventory overview.</p>
+      <form id="authForm" novalidate>
+        <label>User name <span>*</span><input name="username" autocomplete="username" required placeholder="Enter user name"><small class="error"></small></label>
+        <label>Password <span>*</span><div class="password-wrap"><input name="password" type="password" autocomplete="current-password" required placeholder="Enter password"><button type="button" id="togglePassword" aria-label="Show password">👁</button></div><small class="error"></small></label>
+        <button class="primary auth-submit" id="authSubmit" type="submit">Log in</button>
+      </form>
+      <p class="auth-switch"><span id="authSwitchText">New here?</span> <button type="button" id="switchAuth">Create new user</button></p>
+    </div>
+  </section>
+
+  <header class="topbar app-only" hidden>
+    <div class="brand"><span class="brand-mark">IM</span><div><strong>Inventory Master</strong><small>Stock control, made simple</small></div></div>
+    <div class="top-actions"><span id="signedInUser"></span><button class="secondary" id="logout">Log out</button><button class="primary" id="addItem">＋ Add item</button></div>
+  </header>
+  <main id="appMain" class="app-only" hidden>
+    <section class="welcome">
+      <div><p class="eyebrow">OVERVIEW</p><h1>Your inventory at a glance</h1><p>Monitor stock levels, value, and reorder needs from one place.</p></div>
+    </section>
+    <section class="stats" aria-label="Inventory summary">
+      <article><span class="stat-icon blue">▦</span><div><small>Products</small><strong id="totalItems">0</strong></div></article>
+      <article><span class="stat-icon amber">!</span><div><small>Needs attention</small><strong id="lowStock">0</strong></div></article>
+    </section>
+    <section class="inventory-card">
+      <div class="section-head"><div><h2>Inventory</h2><p id="resultCount">0 products</p></div></div>
+      <div class="toolbar">
+        <label class="search"><span>⌕</span><input id="search" type="search" placeholder="Search products…"></label>
+        <select id="statusFilter" aria-label="Filter by stock status"><option value="all">All stock</option><option value="healthy">In stock</option><option value="low">Low stock</option><option value="out">Out of stock</option></select>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Product</th><th>Stock</th><th>Status</th><th aria-label="Actions"></th></tr></thead><tbody id="itemsBody"></tbody></table>
+        <div class="empty" id="emptyState" hidden><div>▤</div><h3>No inventory items found</h3><p>Add your first item, or try changing your search.</p><button class="primary" id="emptyAdd">Add an item</button></div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="itemDialog">
+    <form id="itemForm" novalidate>
+      <div class="dialog-head"><div><h2 id="dialogTitle">Add inventory item</h2><p>Enter the product and stock details below.</p></div><button type="button" class="icon-btn" id="closeDialog" aria-label="Close">×</button></div>
+      <div class="form-grid">
+        <label>Product name <span>*</span><input name="name" maxlength="120" required placeholder="e.g. Wireless headphones"><small class="error"></small></label>
+        <label>Quantity<input name="quantity" type="number" min="0" step="1" value="0"><small class="error"></small></label>
+        <label>Reorder level<input name="reorder_level" type="number" min="0" step="1" value="0"><small class="error"></small></label>
+        <label class="full">Description<textarea name="description" rows="3" maxlength="500" placeholder="Optional notes about this product"></textarea><small class="error"></small></label>
+      </div>
+      <div class="dialog-actions"><button type="button" class="secondary" id="cancelDialog">Cancel</button><button type="submit" class="primary" id="saveItem">Save item</button></div>
+    </form>
+  </dialog>
+  <dialog id="deleteDialog" class="confirm-dialog"><div class="danger-icon">!</div><h2>Delete this item?</h2><p>This removes <strong id="deleteName"></strong> from your inventory. This action cannot be undone.</p><div class="dialog-actions"><button class="secondary" id="cancelDelete">Cancel</button><button class="danger" id="confirmDelete">Delete item</button></div></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
