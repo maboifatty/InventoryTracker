@@ -82,10 +82,17 @@ def initialize_database():
             CREATE TABLE IF NOT EXISTS sevas (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
+                location TEXT NOT NULL DEFAULT '',
                 seva_date TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        columns = {
+            row["name"]
+            for row in db.execute("PRAGMA table_info(sevas)")
+        }
+        if "location" not in columns:
+            db.execute("ALTER TABLE sevas ADD COLUMN location TEXT NOT NULL DEFAULT ''")
         db.execute("""
             CREATE TABLE IF NOT EXISTS seva_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,6 +158,7 @@ def validate(payload, existing=None):
 def validate_seva(payload):
     errors = {}
     name = str(payload.get("name", "")).strip()
+    location = str(payload.get("location", "")).strip()
     seva_date = str(payload.get("seva_date", "")).strip()
     raw_items = payload.get("items", [])
     items = []
@@ -174,7 +182,7 @@ def validate_seva(payload):
             items.append({"id": item_id, "quantity": quantity})
     if "items" not in errors and not items:
         errors["items"] = "Enter a quantity for at least one item."
-    return {"name": name, "seva_date": seva_date, "items": items}, errors
+    return {"name": name, "location": location, "seva_date": seva_date, "items": items}, errors
 
 
 def low_stock_items(db):
@@ -268,6 +276,59 @@ def process_low_stock_notifications(db):
     return result
 
 
+def existing_seva_items(db, seva_id):
+    return {
+        row["inventory_id"]: row["quantity_used"]
+        for row in db.execute(
+            "SELECT inventory_id, quantity_used FROM seva_items WHERE seva_id = ?",
+            (seva_id,),
+        )
+    }
+
+
+def validate_seva_stock_changes(db, new_items, old_items=None):
+    old_items = old_items or {}
+    errors = {}
+    ids = sorted(set(old_items) | {item["id"] for item in new_items})
+    if not ids:
+        return errors
+    existing = {
+        row["id"]: dict(row)
+        for row in db.execute(
+            "SELECT id, name, quantity FROM inventory WHERE id IN ({})".format(",".join("?" for _ in ids)),
+            ids,
+        )
+    }
+    for item_id in ids:
+        current = existing.get(item_id)
+        if current is None:
+            errors[f"item_{item_id}"] = "This item no longer exists."
+            continue
+        old_quantity = old_items.get(item_id, 0)
+        new_quantity = next((item["quantity"] for item in new_items if item["id"] == item_id), 0)
+        available = current["quantity"] + old_quantity
+        if new_quantity > available:
+            errors[f"item_{item_id}"] = f"Only {available} available."
+    return errors
+
+
+def apply_seva_items(db, seva_id, new_items, old_items=None):
+    old_items = old_items or {}
+    new_by_id = {item["id"]: item["quantity"] for item in new_items}
+    for item_id in sorted(set(old_items) | set(new_by_id)):
+        old_quantity = old_items.get(item_id, 0)
+        new_quantity = new_by_id.get(item_id, 0)
+        db.execute(
+            "UPDATE inventory SET quantity = quantity + ? - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (old_quantity, new_quantity, item_id),
+        )
+    db.execute("DELETE FROM seva_items WHERE seva_id = ?", (seva_id,))
+    db.executemany(
+        "INSERT INTO seva_items (seva_id, inventory_id, quantity_used) VALUES (?, ?, ?)",
+        [(seva_id, item["id"], item["quantity"]) for item in new_items],
+    )
+
+
 class InventoryHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT / "static"), **kwargs)
@@ -350,13 +411,14 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                 return
             with connect() as db:
                 sevas = [dict(row) for row in db.execute("""
-                    SELECT id, name, seva_date, created_at
+                    SELECT id, name, location, seva_date, created_at
                     FROM sevas
                     ORDER BY seva_date DESC, created_at DESC, id DESC
                 """)]
                 for seva in sevas:
                     seva["items"] = [dict(row) for row in db.execute("""
-                        SELECT COALESCE(inventory.name, 'Deleted item') AS name,
+                        SELECT seva_items.inventory_id AS id,
+                               COALESCE(inventory.name, 'Deleted item') AS name,
                                seva_items.quantity_used
                         FROM seva_items
                         LEFT JOIN inventory ON inventory.id = seva_items.inventory_id
@@ -435,38 +497,16 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                 self.json_response({"error": "Please correct the highlighted fields.", "fields": errors}, 422)
                 return
             with connect() as db:
-                existing = {
-                    row["id"]: dict(row)
-                    for row in db.execute(
-                        "SELECT id, name, quantity FROM inventory WHERE id IN ({})".format(
-                            ",".join("?" for _ in values["items"])
-                        ),
-                        [item["id"] for item in values["items"]],
-                    )
-                }
-                for item in values["items"]:
-                    current = existing.get(item["id"])
-                    if current is None:
-                        errors[f"item_{item['id']}"] = "This item no longer exists."
-                    elif item["quantity"] > current["quantity"]:
-                        errors[f"item_{item['id']}"] = f"Only {current['quantity']} available."
+                errors = validate_seva_stock_changes(db, values["items"])
                 if errors:
                     self.json_response({"error": "Please correct the highlighted fields.", "fields": errors}, 422)
                     return
                 cursor = db.execute(
-                    "INSERT INTO sevas (name, seva_date) VALUES (?, ?)",
-                    (values["name"], values["seva_date"]),
+                    "INSERT INTO sevas (name, location, seva_date) VALUES (?, ?, ?)",
+                    (values["name"], values["location"], values["seva_date"]),
                 )
                 seva_id = cursor.lastrowid
-                for item in values["items"]:
-                    db.execute(
-                        "INSERT INTO seva_items (seva_id, inventory_id, quantity_used) VALUES (?, ?, ?)",
-                        (seva_id, item["id"], item["quantity"]),
-                    )
-                    db.execute(
-                        "UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                        (item["quantity"], item["id"]),
-                    )
+                apply_seva_items(db, seva_id, values["items"])
                 notification = process_low_stock_notifications(db)
             self.json_response({"message": "Seva saved.", "id": seva_id, "notification": notification}, 201)
             return
@@ -500,6 +540,38 @@ class InventoryHandler(SimpleHTTPRequestHandler):
             self.json_response({"error": "That SKU already exists.", "fields": {"sku": "SKU must be unique."}}, 409)
 
     def do_PUT(self):
+        seva_id = self.seva_id()
+        if seva_id is not None:
+            if self.current_user() is None:
+                self.json_response({"error": "Please log in."}, 401)
+                return
+            payload = self.read_json()
+            if payload is None:
+                self.json_response({"error": "Invalid JSON."}, 400)
+                return
+            values, errors = validate_seva(payload)
+            if errors:
+                self.json_response({"error": "Please correct the highlighted fields.", "fields": errors}, 422)
+                return
+            with connect() as db:
+                row = db.execute("SELECT * FROM sevas WHERE id = ?", (seva_id,)).fetchone()
+                if row is None:
+                    self.json_response({"error": "Seva not found."}, 404)
+                    return
+                old_items = existing_seva_items(db, seva_id)
+                errors = validate_seva_stock_changes(db, values["items"], old_items)
+                if errors:
+                    self.json_response({"error": "Please correct the highlighted fields.", "fields": errors}, 422)
+                    return
+                db.execute(
+                    "UPDATE sevas SET name = ?, location = ?, seva_date = ? WHERE id = ?",
+                    (values["name"], values["location"], values["seva_date"], seva_id),
+                )
+                apply_seva_items(db, seva_id, values["items"], old_items)
+                notification = process_low_stock_notifications(db)
+            self.json_response({"message": "Seva updated.", "id": seva_id, "notification": notification})
+            return
+
         item_id = self.item_id()
         if item_id is None:
             self.json_response({"error": "Not found."}, 404)
@@ -538,6 +610,27 @@ class InventoryHandler(SimpleHTTPRequestHandler):
             self.json_response({"error": "That SKU already exists.", "fields": {"sku": "SKU must be unique."}}, 409)
 
     def do_DELETE(self):
+        seva_id = self.seva_id()
+        if seva_id is not None:
+            if self.current_user() is None:
+                self.json_response({"error": "Please log in."}, 401)
+                return
+            with connect() as db:
+                row = db.execute("SELECT * FROM sevas WHERE id = ?", (seva_id,)).fetchone()
+                if row is None:
+                    self.json_response({"error": "Seva not found."}, 404)
+                    return
+                old_items = existing_seva_items(db, seva_id)
+                for item_id, quantity in old_items.items():
+                    db.execute(
+                        "UPDATE inventory SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (quantity, item_id),
+                    )
+                db.execute("DELETE FROM sevas WHERE id = ?", (seva_id,))
+                notification = process_low_stock_notifications(db)
+            self.json_response({"message": "Seva deleted.", "notification": notification})
+            return
+
         item_id = self.item_id()
         if item_id is None:
             self.json_response({"error": "Not found."}, 404)
@@ -555,6 +648,15 @@ class InventoryHandler(SimpleHTTPRequestHandler):
     def item_id(self):
         parts = urlparse(self.path).path.strip("/").split("/")
         if len(parts) == 3 and parts[:2] == ["api", "items"]:
+            try:
+                return int(parts[2])
+            except ValueError:
+                pass
+        return None
+
+    def seva_id(self):
+        parts = urlparse(self.path).path.strip("/").split("/")
+        if len(parts) == 3 and parts[:2] == ["api", "sevas"]:
             try:
                 return int(parts[2])
             except ValueError:

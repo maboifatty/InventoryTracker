@@ -4,7 +4,8 @@ const dialog = $('#itemDialog'), deleteDialog = $('#deleteDialog'), authForm = $
 const sevaDialog = $('#sevaDialog'), sevaForm = $('#sevaForm'), sevaItems = $('#sevaItems');
 const inventoryEditDialog = $('#inventoryEditDialog'), inventoryEditForm = $('#inventoryEditForm'), inventoryEditItems = $('#inventoryEditItems');
 const sevaLogDialog = $('#sevaLogDialog'), sevaLog = $('#sevaLog');
-let items = [], editingId = null, deletingId = null, timer, creatingUser = false;
+const sevaEditDialog = $('#sevaEditDialog'), sevaEditForm = $('#sevaEditForm'), sevaEditList = $('#sevaEditList'), sevaEditPanel = $('#sevaEditPanel');
+let items = [], sevas = [], editingId = null, deletingId = null, editingSevaId = null, timer, creatingUser = false;
 let authToken = localStorage.getItem('inventoryToken') || '';
 let signedInName = localStorage.getItem('inventoryUser') || '';
 const number = new Intl.NumberFormat('en-US');
@@ -126,9 +127,74 @@ function renderSevaLog(sevas) {
     return;
   }
   sevaLog.innerHTML = sevas.map(seva => `<article class="seva-log-entry">
-    <div class="seva-log-head"><div><strong>${esc(seva.name)}</strong><small>${esc(formatDate(seva.seva_date))}</small></div><span>${number.format(seva.items.length)} item${seva.items.length === 1 ? '' : 's'}</span></div>
+    <div class="seva-log-head"><div><strong>${esc(seva.name)}</strong><small>${esc(formatDate(seva.seva_date))}${seva.location ? ` · ${esc(seva.location)}` : ''}</small></div><span>${number.format(seva.items.length)} item${seva.items.length === 1 ? '' : 's'}</span></div>
     <ul>${seva.items.map(item => `<li><span>${esc(item.name)}</span><strong>${number.format(item.quantity_used)}</strong></li>`).join('')}</ul>
   </article>`).join('');
+}
+async function loadSevas() {
+  const res = await fetch('/api/sevas', apiOptions());
+  const data = await res.json();
+  if(res.status === 401){ showLogin(); throw new Error('login'); }
+  if(!res.ok) throw new Error(data.error || 'Could not load sevas.');
+  sevas = data.sevas || [];
+  return sevas;
+}
+async function openSevaEdit() {
+  editingSevaId = null; clearErrors(sevaEditForm);
+  sevaEditList.innerHTML = '<div class="seva-empty">Loading sevas…</div>';
+  sevaEditPanel.innerHTML = '<div class="seva-empty">Select a seva to edit.</div>';
+  $('#saveSevaEdit').disabled = true; $('#deleteSeva').disabled = true;
+  sevaEditDialog.showModal();
+  try {
+    await loadSevas();
+    renderSevaEditList();
+  } catch {
+    sevaEditList.innerHTML = '<div class="seva-empty">Could not load sevas.</div>';
+  }
+}
+function renderSevaEditList() {
+  if (!sevas.length) {
+    sevaEditList.innerHTML = '<div class="seva-empty">No sevas have been recorded yet.</div>';
+    return;
+  }
+  sevaEditList.innerHTML = sevas.map(seva => `<button type="button" class="seva-edit-choice ${seva.id === editingSevaId ? 'selected' : ''}" data-seva-choice="${seva.id}">
+    <strong>${esc(seva.name)}</strong>
+    <small>${esc(formatDate(seva.seva_date))}${seva.location ? ` · ${esc(seva.location)}` : ''}</small>
+  </button>`).join('');
+}
+function openSelectedSeva(sevaId) {
+  editingSevaId = sevaId; clearErrors(sevaEditForm); renderSevaEditList();
+  const seva = sevas.find(entry => entry.id === sevaId);
+  if (!seva) return;
+  const oldById = Object.fromEntries((seva.items || []).map(item => [item.id, item.quantity_used]));
+  sevaEditPanel.innerHTML = `<div class="form-grid seva-edit-fields">
+    <label>Seva Name <span>*</span><input name="name" maxlength="120" required value="${esc(seva.name)}"><small class="error"></small></label>
+    <label>Seva Date <span>*</span><input name="seva_date" type="date" required value="${esc(seva.seva_date)}"><small class="error"></small></label>
+    <label class="full">Location<input name="location" maxlength="160" value="${esc(seva.location || '')}" placeholder="Optional location"><small class="error"></small></label>
+    <div class="full seva-items-field">
+      <div class="seva-items-head"><strong>Inventory items used</strong><small>Adjust quantities used in this seva.</small></div>
+      <div class="seva-items">${items.map(item => {
+        const oldQuantity = oldById[item.id] || 0;
+        const available = item.quantity + oldQuantity;
+        return `<label class="seva-item">
+          <span><strong>${esc(item.name)}</strong><small>${number.format(available)} available including this seva</small></span>
+          <input name="item_${item.id}" data-edit-seva-item-id="${item.id}" type="number" min="0" max="${available}" step="1" value="${oldQuantity}" aria-label="${esc(item.name)} quantity used">
+          <small class="error" data-error-for="item_${item.id}"></small>
+        </label>`;
+      }).join('')}</div>
+      <small class="error" data-error-for="items"></small>
+    </div>
+  </div>`;
+  $('#saveSevaEdit').disabled = false; $('#deleteSeva').disabled = false;
+}
+function sevaPayloadFrom(scope, selector='[data-item-id]') {
+  const itemInputs = [...scope.querySelectorAll(selector)];
+  return {
+    name: scope.name.value,
+    location: scope.location?.value || '',
+    seva_date: scope.seva_date.value,
+    items: itemInputs.map(input => ({id: Number(input.dataset.itemId || input.dataset.editSevaItemId), quantity: Number(input.value || 0)}))
+  };
 }
 function formatDate(value) {
   if (!value) return '';
@@ -182,12 +248,7 @@ form.addEventListener('submit', async e => {
 });
 sevaForm.addEventListener('submit', async e => {
   e.preventDefault(); clearErrors(sevaForm);
-  const itemInputs = [...sevaForm.querySelectorAll('[data-item-id]')];
-  const payload = {
-    name: sevaForm.name.value,
-    seva_date: sevaForm.seva_date.value,
-    items: itemInputs.map(input => ({id: Number(input.dataset.itemId), quantity: Number(input.value || 0)}))
-  };
+  const payload = sevaPayloadFrom(sevaForm);
   const button = $('#saveSeva'); button.disabled = true; button.textContent = 'Submitting…';
   try {
     const res = await fetch('/api/sevas', apiOptions({method:'POST', body:JSON.stringify(payload)}));
@@ -197,6 +258,36 @@ sevaForm.addEventListener('submit', async e => {
     sevaDialog.close(); showNotificationResult(data.notification); toast('Seva saved. Inventory updated.'); loadItems();
   } catch { toast('Could not connect to the inventory service.'); }
   finally { button.disabled = false; button.textContent = 'Submit seva'; }
+});
+sevaEditList.addEventListener('click', e => {
+  const choice = e.target.closest('[data-seva-choice]');
+  if (choice) openSelectedSeva(Number(choice.dataset.sevaChoice));
+});
+sevaEditForm.addEventListener('submit', async e => {
+  e.preventDefault(); if (!editingSevaId) return; clearErrors(sevaEditForm);
+  const payload = sevaPayloadFrom(sevaEditForm, '[data-edit-seva-item-id]');
+  const button = $('#saveSevaEdit'); button.disabled = true; button.textContent = 'Saving…';
+  try {
+    const res = await fetch(`/api/sevas/${editingSevaId}`, apiOptions({method:'PUT', body:JSON.stringify(payload)}));
+    const data = await res.json();
+    if(res.status === 401){ showLogin(); return; }
+    if(!res.ok){ showErrors(sevaEditForm, data.fields); toast(data.error || 'Could not update seva.'); return; }
+    showNotificationResult(data.notification); toast('Seva updated. Inventory adjusted.'); await loadItems(); await loadSevas(); renderSevaEditList(); openSelectedSeva(editingSevaId);
+  } catch { toast('Could not connect to the inventory service.'); }
+  finally { button.disabled = false; button.textContent = 'Save seva'; }
+});
+$('#deleteSeva').addEventListener('click', async () => {
+  if (!editingSevaId || !confirm('Delete this seva and restore its inventory quantities?')) return;
+  const button = $('#deleteSeva'); button.disabled = true; button.textContent = 'Deleting…';
+  try {
+    const res = await fetch(`/api/sevas/${editingSevaId}`, apiOptions({method:'DELETE'}));
+    const data = await res.json();
+    if(res.status === 401){ showLogin(); return; }
+    if(!res.ok){ toast(data.error || 'Could not delete seva.'); return; }
+    editingSevaId = null; showNotificationResult(data.notification); toast('Seva deleted. Inventory restored.'); await loadItems(); await loadSevas(); renderSevaEditList();
+    sevaEditPanel.innerHTML = '<div class="seva-empty">Select a seva to edit.</div>'; $('#saveSevaEdit').disabled = true;
+  } catch { toast('Could not connect to the inventory service.'); }
+  finally { button.disabled = !editingSevaId; button.textContent = 'Delete seva'; }
 });
 inventoryEditForm.addEventListener('submit', async e => {
   e.preventDefault(); clearErrors(inventoryEditForm);
@@ -238,11 +329,12 @@ $('#confirmDelete').addEventListener('click', async () => {
 $('#togglePassword').onclick=()=>{ const input=authForm.password; const showing=input.type==='text'; input.type=showing?'password':'text'; $('#togglePassword').textContent=showing?'👁':'🙈'; input.focus(); };
 $('#switchAuth').onclick=()=>setAuthMode(!creatingUser);
 $('#logout').onclick=async()=>{ try{ await fetch('/api/logout', apiOptions({method:'POST'})); } finally { showLogin(); toast('Logged out.'); } };
-$('#addItem').onclick=()=>openForm(); $('#emptyAdd').onclick=()=>openForm(); $('#addSeva').onclick=()=>openSevaForm(); $('#editInventory').onclick=()=>openInventoryEditForm(); $('#viewSevas').onclick=()=>openSevaLog();
+$('#addItem').onclick=()=>openForm(); $('#emptyAdd').onclick=()=>openForm(); $('#addSeva').onclick=()=>openSevaForm(); $('#editInventory').onclick=()=>openInventoryEditForm(); $('#viewSevas').onclick=()=>openSevaLog(); $('#editSevas').onclick=()=>openSevaEdit();
 $('#closeDialog').onclick=()=>dialog.close(); $('#cancelDialog').onclick=()=>dialog.close();
 $('#closeSevaDialog').onclick=()=>sevaDialog.close(); $('#cancelSevaDialog').onclick=()=>sevaDialog.close();
 $('#closeInventoryEditDialog').onclick=()=>inventoryEditDialog.close(); $('#cancelInventoryEditDialog').onclick=()=>inventoryEditDialog.close();
 $('#closeSevaLogDialog').onclick=()=>sevaLogDialog.close(); $('#doneSevaLog').onclick=()=>sevaLogDialog.close();
+$('#closeSevaEditDialog').onclick=()=>sevaEditDialog.close(); $('#cancelSevaEditDialog').onclick=()=>sevaEditDialog.close();
 $('#cancelDelete').onclick=()=>deleteDialog.close();
 $('#search').addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(loadItems,250)});
 $('#statusFilter').addEventListener('change',loadItems);
