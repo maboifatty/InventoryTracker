@@ -24,6 +24,8 @@ Open <http://127.0.0.1:8000> in a browser. Stop the server with `Ctrl+C`.
 - Password visibility toggle
 - User credentials stored locally in SQLite with password hashing
 - Create, edit, search, filter, and delete inventory master records
+- Bulk-correct inventory stock and minimum threshold values
+- Record sevas and subtract used quantities from inventory stock
 - Stock status and reorder alerts
 - Persistent local SQLite storage
 
@@ -32,6 +34,7 @@ Open <http://127.0.0.1:8000> in a browser. Stop the server with `Ctrl+C`.
 - `POST /api/users`
 - `POST /api/login`
 - `POST /api/logout`
+- `POST /api/sevas`
 - `GET /api/items` (supports `search` and `status` query parameters)
 - `POST /api/items`
 - `PUT /api/items/{id}`

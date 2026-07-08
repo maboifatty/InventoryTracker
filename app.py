@@ -57,6 +57,24 @@ def initialize_database():
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS sevas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                seva_date TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS seva_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                seva_id INTEGER NOT NULL,
+                inventory_id INTEGER NOT NULL,
+                quantity_used INTEGER NOT NULL CHECK(quantity_used > 0),
+                FOREIGN KEY(seva_id) REFERENCES sevas(id) ON DELETE CASCADE,
+                FOREIGN KEY(inventory_id) REFERENCES inventory(id) ON DELETE CASCADE
+            )
+        """)
 
 
 def hash_password(password, salt=None):
@@ -100,6 +118,35 @@ def validate(payload, existing=None):
     except (TypeError, ValueError):
         errors["unit_price"] = "Must be a number of 0 or more."
     return values, errors
+
+
+def validate_seva(payload):
+    errors = {}
+    name = str(payload.get("name", "")).strip()
+    seva_date = str(payload.get("seva_date", "")).strip()
+    raw_items = payload.get("items", [])
+    items = []
+    if not name:
+        errors["name"] = "Seva name is required."
+    if not seva_date:
+        errors["seva_date"] = "Seva date is required."
+    if not isinstance(raw_items, list):
+        errors["items"] = "Item quantities are required."
+        raw_items = []
+    for raw in raw_items:
+        try:
+            item_id = int(raw.get("id"))
+            quantity = int(raw.get("quantity", 0))
+        except (AttributeError, TypeError, ValueError):
+            errors["items"] = "Item quantities must be whole numbers."
+            continue
+        if quantity < 0:
+            errors[f"item_{item_id}"] = "Quantity cannot be negative."
+        elif quantity > 0:
+            items.append({"id": item_id, "quantity": quantity})
+    if "items" not in errors and not items:
+        errors["items"] = "Enter a quantity for at least one item."
+    return {"name": name, "seva_date": seva_date, "items": items}, errors
 
 
 class InventoryHandler(SimpleHTTPRequestHandler):
@@ -228,6 +275,54 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                 with connect() as db:
                     db.execute("DELETE FROM sessions WHERE token = ?", (token,))
             self.json_response({"message": "Logged out."})
+            return
+
+        if self.path == "/api/sevas":
+            if self.current_user() is None:
+                self.json_response({"error": "Please log in."}, 401)
+                return
+            payload = self.read_json()
+            if payload is None:
+                self.json_response({"error": "Invalid JSON."}, 400)
+                return
+            values, errors = validate_seva(payload)
+            if errors:
+                self.json_response({"error": "Please correct the highlighted fields.", "fields": errors}, 422)
+                return
+            with connect() as db:
+                existing = {
+                    row["id"]: dict(row)
+                    for row in db.execute(
+                        "SELECT id, name, quantity FROM inventory WHERE id IN ({})".format(
+                            ",".join("?" for _ in values["items"])
+                        ),
+                        [item["id"] for item in values["items"]],
+                    )
+                }
+                for item in values["items"]:
+                    current = existing.get(item["id"])
+                    if current is None:
+                        errors[f"item_{item['id']}"] = "This item no longer exists."
+                    elif item["quantity"] > current["quantity"]:
+                        errors[f"item_{item['id']}"] = f"Only {current['quantity']} available."
+                if errors:
+                    self.json_response({"error": "Please correct the highlighted fields.", "fields": errors}, 422)
+                    return
+                cursor = db.execute(
+                    "INSERT INTO sevas (name, seva_date) VALUES (?, ?)",
+                    (values["name"], values["seva_date"]),
+                )
+                seva_id = cursor.lastrowid
+                for item in values["items"]:
+                    db.execute(
+                        "INSERT INTO seva_items (seva_id, inventory_id, quantity_used) VALUES (?, ?, ?)",
+                        (seva_id, item["id"], item["quantity"]),
+                    )
+                    db.execute(
+                        "UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (item["quantity"], item["id"]),
+                    )
+            self.json_response({"message": "Seva saved.", "id": seva_id}, 201)
             return
 
         if self.path != "/api/items":

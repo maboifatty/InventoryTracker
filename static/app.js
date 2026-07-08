@@ -1,6 +1,8 @@
 const $ = (s) => document.querySelector(s);
 const body = $('#itemsBody'), empty = $('#emptyState'), form = $('#itemForm');
 const dialog = $('#itemDialog'), deleteDialog = $('#deleteDialog'), authForm = $('#authForm');
+const sevaDialog = $('#sevaDialog'), sevaForm = $('#sevaForm'), sevaItems = $('#sevaItems');
+const inventoryEditDialog = $('#inventoryEditDialog'), inventoryEditForm = $('#inventoryEditForm'), inventoryEditItems = $('#inventoryEditItems');
 let items = [], editingId = null, deletingId = null, timer, creatingUser = false;
 let authToken = localStorage.getItem('inventoryToken') || '';
 let signedInName = localStorage.getItem('inventoryUser') || '';
@@ -54,8 +56,41 @@ function openForm(item=null) {
   else { form.quantity.value=0; form.reorder_level.value=0; }
   dialog.showModal(); setTimeout(() => form.name.focus(), 30);
 }
+function openSevaForm() {
+  sevaForm.reset(); clearErrors(sevaForm);
+  sevaForm.seva_date.valueAsDate = new Date();
+  renderSevaItems();
+  sevaDialog.showModal(); setTimeout(() => sevaForm.name.focus(), 30);
+}
+function renderSevaItems() {
+  if (!items.length) {
+    sevaItems.innerHTML = '<div class="seva-empty">No inventory items available. Add inventory items first.</div>';
+    return;
+  }
+  sevaItems.innerHTML = items.map(item => `<label class="seva-item">
+    <span><strong>${esc(item.name)}</strong><small>${number.format(item.quantity)} in stock</small></span>
+    <input name="item_${item.id}" data-item-id="${item.id}" type="number" min="0" max="${item.quantity}" step="1" value="0" aria-label="${esc(item.name)} quantity used">
+    <small class="error" data-error-for="item_${item.id}"></small>
+  </label>`).join('');
+}
+function openInventoryEditForm() {
+  clearErrors(inventoryEditForm);
+  renderInventoryEditItems();
+  inventoryEditDialog.showModal();
+}
+function renderInventoryEditItems() {
+  if (!items.length) {
+    inventoryEditItems.innerHTML = '<div class="seva-empty">No inventory items available. Add inventory items first.</div>';
+    return;
+  }
+  inventoryEditItems.innerHTML = items.map(item => `<div class="inventory-edit-row">
+    <div class="product"><strong>${esc(item.name)}</strong><small>${esc(item.sku)}</small></div>
+    <label><span>Stock</span><input name="quantity_${item.id}" data-edit-id="${item.id}" data-field="quantity" type="number" min="0" step="1" value="${item.quantity}"><small class="error" data-error-for="quantity_${item.id}"></small></label>
+    <label><span>Minimum</span><input name="reorder_${item.id}" data-edit-id="${item.id}" data-field="reorder_level" type="number" min="0" step="1" value="${item.reorder_level}"><small class="error" data-error-for="reorder_${item.id}"></small></label>
+  </div>`).join('');
+}
 function clearErrors(scope=document) { scope.querySelectorAll('.error').forEach(e=>e.textContent=''); scope.querySelectorAll('.invalid').forEach(e=>e.classList.remove('invalid')); }
-function showErrors(scope, fields={}) { clearErrors(scope); Object.entries(fields || {}).forEach(([name,msg])=>{ const input=scope.elements[name]; if(input){input.classList.add('invalid');input.closest('label').querySelector('.error').textContent=msg;}}); }
+function showErrors(scope, fields={}) { clearErrors(scope); Object.entries(fields || {}).forEach(([name,msg])=>{ const input=scope.elements[name]; const custom=scope.querySelector(`[data-error-for="${name}"]`); if(input){input.classList.add('invalid');input.closest('label').querySelector('.error').textContent=msg;} else if(custom){custom.textContent=msg;} }); }
 function toast(message) { const el=$('#toast'); el.textContent=message; el.classList.add('show'); clearTimeout(timer); timer=setTimeout(()=>el.classList.remove('show'),2800); }
 function setAuthMode(create) {
   creatingUser = create; clearErrors(authForm); authForm.reset();
@@ -98,6 +133,51 @@ form.addEventListener('submit', async e => {
   } catch { toast('Could not connect to the inventory service.'); }
   finally { button.disabled=false; button.textContent=editingId?'Save changes':'Save item'; }
 });
+sevaForm.addEventListener('submit', async e => {
+  e.preventDefault(); clearErrors(sevaForm);
+  const itemInputs = [...sevaForm.querySelectorAll('[data-item-id]')];
+  const payload = {
+    name: sevaForm.name.value,
+    seva_date: sevaForm.seva_date.value,
+    items: itemInputs.map(input => ({id: Number(input.dataset.itemId), quantity: Number(input.value || 0)}))
+  };
+  const button = $('#saveSeva'); button.disabled = true; button.textContent = 'Submitting…';
+  try {
+    const res = await fetch('/api/sevas', apiOptions({method:'POST', body:JSON.stringify(payload)}));
+    const data = await res.json();
+    if(res.status === 401){ showLogin(); toast('Please log in.'); return; }
+    if(!res.ok){ showErrors(sevaForm, data.fields); toast(data.error || 'Could not save seva.'); return; }
+    sevaDialog.close(); toast('Seva saved. Inventory updated.'); loadItems();
+  } catch { toast('Could not connect to the inventory service.'); }
+  finally { button.disabled = false; button.textContent = 'Submit seva'; }
+});
+inventoryEditForm.addEventListener('submit', async e => {
+  e.preventDefault(); clearErrors(inventoryEditForm);
+  const updates = items.map(item => {
+    const quantity = inventoryEditForm.elements[`quantity_${item.id}`];
+    const reorder = inventoryEditForm.elements[`reorder_${item.id}`];
+    return {...item, quantity: Number(quantity?.value ?? item.quantity), reorder_level: Number(reorder?.value ?? item.reorder_level)};
+  });
+  const fieldErrors = {};
+  updates.forEach(item => {
+    if (!Number.isInteger(item.quantity) || item.quantity < 0) fieldErrors[`quantity_${item.id}`] = 'Use 0 or more.';
+    if (!Number.isInteger(item.reorder_level) || item.reorder_level < 0) fieldErrors[`reorder_${item.id}`] = 'Use 0 or more.';
+  });
+  if (Object.keys(fieldErrors).length) { showErrors(inventoryEditForm, fieldErrors); toast('Please correct the highlighted values.'); return; }
+  const button = $('#saveInventoryEdit'); button.disabled = true; button.textContent = 'Saving…';
+  try {
+    for (const item of updates) {
+      const original = items.find(current => current.id === item.id);
+      if (original.quantity === item.quantity && original.reorder_level === item.reorder_level) continue;
+      const res = await fetch(`/api/items/${item.id}`, apiOptions({method:'PUT', body:JSON.stringify(item)}));
+      const data = await res.json();
+      if(res.status === 401){ showLogin(); toast('Please log in.'); return; }
+      if(!res.ok){ toast(data.error || `Could not update ${item.name}.`); return; }
+    }
+    inventoryEditDialog.close(); toast('Inventory updated.'); loadItems();
+  } catch { toast('Could not connect to the inventory service.'); }
+  finally { button.disabled = false; button.textContent = 'Save inventory'; }
+});
 body.addEventListener('click', e => {
   const edit=e.target.dataset.edit, del=e.target.dataset.delete;
   if(edit) openForm(items.find(i=>i.id===Number(edit)));
@@ -110,8 +190,10 @@ $('#confirmDelete').addEventListener('click', async () => {
 $('#togglePassword').onclick=()=>{ const input=authForm.password; const showing=input.type==='text'; input.type=showing?'password':'text'; $('#togglePassword').textContent=showing?'👁':'🙈'; input.focus(); };
 $('#switchAuth').onclick=()=>setAuthMode(!creatingUser);
 $('#logout').onclick=async()=>{ try{ await fetch('/api/logout', apiOptions({method:'POST'})); } finally { showLogin(); toast('Logged out.'); } };
-$('#addItem').onclick=()=>openForm(); $('#emptyAdd').onclick=()=>openForm();
+$('#addItem').onclick=()=>openForm(); $('#emptyAdd').onclick=()=>openForm(); $('#addSeva').onclick=()=>openSevaForm(); $('#editInventory').onclick=()=>openInventoryEditForm();
 $('#closeDialog').onclick=()=>dialog.close(); $('#cancelDialog').onclick=()=>dialog.close();
+$('#closeSevaDialog').onclick=()=>sevaDialog.close(); $('#cancelSevaDialog').onclick=()=>sevaDialog.close();
+$('#closeInventoryEditDialog').onclick=()=>inventoryEditDialog.close(); $('#cancelInventoryEditDialog').onclick=()=>inventoryEditDialog.close();
 $('#cancelDelete').onclick=()=>deleteDialog.close();
 $('#search').addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(loadItems,250)});
 $('#statusFilter').addEventListener('change',loadItems);

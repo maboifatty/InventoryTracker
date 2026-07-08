@@ -24,7 +24,7 @@
 
   <header class="topbar app-only" hidden>
     <div class="brand"><span class="brand-mark">IM</span><div><strong>Inventory Master</strong><small>Stock control, made simple</small></div></div>
-    <div class="top-actions"><span id="signedInUser"></span><button class="secondary" id="logout">Log out</button><button class="primary" id="addItem">＋ Add item</button></div>
+    <div class="top-actions"><span id="signedInUser"></span><button class="secondary" id="logout">Log out</button><button class="primary" id="editInventory">✎ Edit inventory</button><button class="primary" id="addSeva">＋ Add seva</button><button class="primary" id="addItem">＋ Add item</button></div>
   </header>
   <main id="appMain" class="app-only" hidden>
     <section class="welcome">
@@ -57,6 +57,31 @@
         <label class="full">Description<textarea name="description" rows="3" maxlength="500" placeholder="Optional notes about this product"></textarea><small class="error"></small></label>
       </div>
       <div class="dialog-actions"><button type="button" class="secondary" id="cancelDialog">Cancel</button><button type="submit" class="primary" id="saveItem">Save item</button></div>
+    </form>
+  </dialog>
+  <dialog id="sevaDialog">
+    <form id="sevaForm" novalidate>
+      <div class="dialog-head"><div><h2>Add seva</h2><p>Enter the seva details and items used.</p></div><button type="button" class="icon-btn" id="closeSevaDialog" aria-label="Close">×</button></div>
+      <div class="form-grid">
+        <label>Seva Name <span>*</span><input name="name" maxlength="120" required placeholder="e.g. Annadanam"><small class="error"></small></label>
+        <label>Seva Date <span>*</span><input name="seva_date" type="date" required><small class="error"></small></label>
+        <div class="full seva-items-field">
+          <div class="seva-items-head"><strong>Inventory items used</strong><small>Enter the quantity used for each item. Leave unused items as 0.</small></div>
+          <div id="sevaItems" class="seva-items"></div>
+          <small class="error" data-error-for="items"></small>
+        </div>
+      </div>
+      <div class="dialog-actions"><button type="button" class="secondary" id="cancelSevaDialog">Cancel</button><button type="submit" class="primary" id="saveSeva">Submit seva</button></div>
+    </form>
+  </dialog>
+  <dialog id="inventoryEditDialog">
+    <form id="inventoryEditForm" novalidate>
+      <div class="dialog-head"><div><h2>Edit inventory</h2><p>Correct stock and minimum values for existing items.</p></div><button type="button" class="icon-btn" id="closeInventoryEditDialog" aria-label="Close">×</button></div>
+      <div class="inventory-edit-wrap">
+        <div class="inventory-edit-head"><span>Product</span><span>Stock</span><span>Minimum</span></div>
+        <div id="inventoryEditItems" class="inventory-edit-items"></div>
+      </div>
+      <div class="dialog-actions"><button type="button" class="secondary" id="cancelInventoryEditDialog">Cancel</button><button type="submit" class="primary" id="saveInventoryEdit">Save inventory</button></div>
     </form>
   </dialog>
   <dialog id="deleteDialog" class="confirm-dialog"><div class="danger-icon">!</div><h2>Delete this item?</h2><p>This removes <strong id="deleteName"></strong> from your inventory. This action cannot be undone.</p><div class="dialog-actions"><button class="secondary" id="cancelDelete">Cancel</button><button class="danger" id="confirmDelete">Delete item</button></div></dialog>
