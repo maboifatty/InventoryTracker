@@ -3,6 +3,7 @@ const body = $('#itemsBody'), empty = $('#emptyState'), form = $('#itemForm');
 const dialog = $('#itemDialog'), deleteDialog = $('#deleteDialog'), authForm = $('#authForm');
 const sevaDialog = $('#sevaDialog'), sevaForm = $('#sevaForm'), sevaItems = $('#sevaItems');
 const inventoryEditDialog = $('#inventoryEditDialog'), inventoryEditForm = $('#inventoryEditForm'), inventoryEditItems = $('#inventoryEditItems');
+const sevaLogDialog = $('#sevaLogDialog'), sevaLog = $('#sevaLog');
 let items = [], editingId = null, deletingId = null, timer, creatingUser = false;
 let authToken = localStorage.getItem('inventoryToken') || '';
 let signedInName = localStorage.getItem('inventoryUser') || '';
@@ -40,6 +41,7 @@ async function loadItems() {
 function render(stats) {
   $('#totalItems').textContent = number.format(stats.total_items);
   $('#lowStock').textContent = number.format(stats.low_stock);
+  renderRestockEmailNote(stats);
   $('#resultCount').textContent = `${items.length} product${items.length === 1 ? '' : 's'}`;
   body.innerHTML = items.map(item => { const status=stockStatus(item); return `<tr>
     <td><div class="product"><strong>${esc(item.name)}</strong><small>${esc(item.sku)}</small></div></td>
@@ -47,6 +49,22 @@ function render(stats) {
     <td><span class="badge ${status[1]}">${status[0]}</span></td>
     <td class="row-actions"><button class="action-btn" data-edit="${item.id}" title="Edit item">Edit</button><button class="action-btn" data-delete="${item.id}" title="Delete item">Delete</button></td></tr>`; }).join('');
   empty.hidden = items.length !== 0; body.closest('table').hidden = items.length === 0;
+}
+function renderRestockEmailNote(stats) {
+  const note = $('#restockEmailNote');
+  if (!stats.low_stock) {
+    note.hidden = true;
+    note.textContent = '';
+    return;
+  }
+  note.hidden = false;
+  note.textContent = stats.restock_email_sent
+    ? `Email sent to ${stats.restock_email_to} with restock information.`
+    : `Restock email to ${stats.restock_email_to} is pending email setup.`;
+}
+function showNotificationResult(notification) {
+  if (!notification || !notification.message) return;
+  toast(notification.message);
 }
 function openForm(item=null) {
   editingId = item?.id || null; form.reset(); clearErrors(form);
@@ -89,6 +107,35 @@ function renderInventoryEditItems() {
     <label><span>Minimum</span><input name="reorder_${item.id}" data-edit-id="${item.id}" data-field="reorder_level" type="number" min="0" step="1" value="${item.reorder_level}"><small class="error" data-error-for="reorder_${item.id}"></small></label>
   </div>`).join('');
 }
+async function openSevaLog() {
+  sevaLog.innerHTML = '<div class="seva-empty">Loading sevas…</div>';
+  sevaLogDialog.showModal();
+  try {
+    const res = await fetch('/api/sevas', apiOptions());
+    const data = await res.json();
+    if(res.status === 401){ sevaLogDialog.close(); showLogin(); toast('Please log in.'); return; }
+    if(!res.ok){ sevaLog.innerHTML = '<div class="seva-empty">Could not load sevas.</div>'; return; }
+    renderSevaLog(data.sevas || []);
+  } catch {
+    sevaLog.innerHTML = '<div class="seva-empty">Could not connect to the inventory service.</div>';
+  }
+}
+function renderSevaLog(sevas) {
+  if (!sevas.length) {
+    sevaLog.innerHTML = '<div class="seva-empty">No sevas have been recorded yet.</div>';
+    return;
+  }
+  sevaLog.innerHTML = sevas.map(seva => `<article class="seva-log-entry">
+    <div class="seva-log-head"><div><strong>${esc(seva.name)}</strong><small>${esc(formatDate(seva.seva_date))}</small></div><span>${number.format(seva.items.length)} item${seva.items.length === 1 ? '' : 's'}</span></div>
+    <ul>${seva.items.map(item => `<li><span>${esc(item.name)}</span><strong>${number.format(item.quantity_used)}</strong></li>`).join('')}</ul>
+  </article>`).join('');
+}
+function formatDate(value) {
+  if (!value) return '';
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return value;
+  return new Intl.DateTimeFormat('en-US', {month:'short', day:'numeric', year:'numeric'}).format(new Date(year, month - 1, day));
+}
 function clearErrors(scope=document) { scope.querySelectorAll('.error').forEach(e=>e.textContent=''); scope.querySelectorAll('.invalid').forEach(e=>e.classList.remove('invalid')); }
 function showErrors(scope, fields={}) { clearErrors(scope); Object.entries(fields || {}).forEach(([name,msg])=>{ const input=scope.elements[name]; const custom=scope.querySelector(`[data-error-for="${name}"]`); if(input){input.classList.add('invalid');input.closest('label').querySelector('.error').textContent=msg;} else if(custom){custom.textContent=msg;} }); }
 function toast(message) { const el=$('#toast'); el.textContent=message; el.classList.add('show'); clearTimeout(timer); timer=setTimeout(()=>el.classList.remove('show'),2800); }
@@ -129,7 +176,7 @@ form.addEventListener('submit', async e => {
     const data=await res.json();
     if(res.status === 401){ showLogin(); toast('Please log in.'); return; }
     if(!res.ok){ showErrors(form, data.fields); toast(data.error || 'Could not save item.'); return; }
-    dialog.close(); toast(editingId ? 'Item updated.' : 'Item added.'); loadItems();
+    dialog.close(); showNotificationResult(data.notification); toast(editingId ? 'Item updated.' : 'Item added.'); loadItems();
   } catch { toast('Could not connect to the inventory service.'); }
   finally { button.disabled=false; button.textContent=editingId?'Save changes':'Save item'; }
 });
@@ -147,7 +194,7 @@ sevaForm.addEventListener('submit', async e => {
     const data = await res.json();
     if(res.status === 401){ showLogin(); toast('Please log in.'); return; }
     if(!res.ok){ showErrors(sevaForm, data.fields); toast(data.error || 'Could not save seva.'); return; }
-    sevaDialog.close(); toast('Seva saved. Inventory updated.'); loadItems();
+    sevaDialog.close(); showNotificationResult(data.notification); toast('Seva saved. Inventory updated.'); loadItems();
   } catch { toast('Could not connect to the inventory service.'); }
   finally { button.disabled = false; button.textContent = 'Submit seva'; }
 });
@@ -173,6 +220,7 @@ inventoryEditForm.addEventListener('submit', async e => {
       const data = await res.json();
       if(res.status === 401){ showLogin(); toast('Please log in.'); return; }
       if(!res.ok){ toast(data.error || `Could not update ${item.name}.`); return; }
+      showNotificationResult(data.notification);
     }
     inventoryEditDialog.close(); toast('Inventory updated.'); loadItems();
   } catch { toast('Could not connect to the inventory service.'); }
@@ -190,10 +238,11 @@ $('#confirmDelete').addEventListener('click', async () => {
 $('#togglePassword').onclick=()=>{ const input=authForm.password; const showing=input.type==='text'; input.type=showing?'password':'text'; $('#togglePassword').textContent=showing?'👁':'🙈'; input.focus(); };
 $('#switchAuth').onclick=()=>setAuthMode(!creatingUser);
 $('#logout').onclick=async()=>{ try{ await fetch('/api/logout', apiOptions({method:'POST'})); } finally { showLogin(); toast('Logged out.'); } };
-$('#addItem').onclick=()=>openForm(); $('#emptyAdd').onclick=()=>openForm(); $('#addSeva').onclick=()=>openSevaForm(); $('#editInventory').onclick=()=>openInventoryEditForm();
+$('#addItem').onclick=()=>openForm(); $('#emptyAdd').onclick=()=>openForm(); $('#addSeva').onclick=()=>openSevaForm(); $('#editInventory').onclick=()=>openInventoryEditForm(); $('#viewSevas').onclick=()=>openSevaLog();
 $('#closeDialog').onclick=()=>dialog.close(); $('#cancelDialog').onclick=()=>dialog.close();
 $('#closeSevaDialog').onclick=()=>sevaDialog.close(); $('#cancelSevaDialog').onclick=()=>sevaDialog.close();
 $('#closeInventoryEditDialog').onclick=()=>inventoryEditDialog.close(); $('#cancelInventoryEditDialog').onclick=()=>inventoryEditDialog.close();
+$('#closeSevaLogDialog').onclick=()=>sevaLogDialog.close(); $('#doneSevaLog').onclick=()=>sevaLogDialog.close();
 $('#cancelDelete').onclick=()=>deleteDialog.close();
 $('#search').addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(loadItems,250)});
 $('#statusFilter').addEventListener('change',loadItems);

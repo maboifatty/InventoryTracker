@@ -24,7 +24,7 @@
 
   <header class="topbar app-only" hidden>
     <div class="brand"><span class="brand-mark">IM</span><div><strong>Inventory Master</strong><small>Stock control, made simple</small></div></div>
-    <div class="top-actions"><span id="signedInUser"></span><button class="secondary" id="logout">Log out</button><button class="primary" id="editInventory">✎ Edit inventory</button><button class="primary" id="addSeva">＋ Add seva</button><button class="primary" id="addItem">＋ Add item</button></div>
+    <div class="top-actions"><span id="signedInUser"></span><button class="secondary" id="logout">Log out</button><button class="primary" id="viewSevas">View sevas</button><button class="primary" id="editInventory">✎ Edit inventory</button><button class="primary" id="addSeva">＋ Add seva</button><button class="primary" id="addItem">＋ Add item</button></div>
   </header>
   <main id="appMain" class="app-only" hidden>
     <section class="welcome">
@@ -32,7 +32,7 @@
     </section>
     <section class="stats" aria-label="Inventory summary">
       <article><span class="stat-icon blue">▦</span><div><small>Products</small><strong id="totalItems">0</strong></div></article>
-      <article><span class="stat-icon amber">!</span><div><small>Needs attention</small><strong id="lowStock">0</strong></div></article>
+      <article><span class="stat-icon amber">!</span><div><small>Needs attention</small><strong id="lowStock">0</strong><em id="restockEmailNote" class="restock-note" hidden></em></div></article>
     </section>
     <section class="inventory-card">
       <div class="section-head"><div><h2>Inventory</h2><p id="resultCount">0 products</p></div></div>
@@ -83,6 +83,11 @@
       </div>
       <div class="dialog-actions"><button type="button" class="secondary" id="cancelInventoryEditDialog">Cancel</button><button type="submit" class="primary" id="saveInventoryEdit">Save inventory</button></div>
     </form>
+  </dialog>
+  <dialog id="sevaLogDialog">
+    <div class="dialog-head"><div><h2>Seva log</h2><p>Review past sevas, dates, and items used.</p></div><button type="button" class="icon-btn" id="closeSevaLogDialog" aria-label="Close">×</button></div>
+    <div id="sevaLog" class="seva-log"></div>
+    <div class="dialog-actions"><button type="button" class="primary" id="doneSevaLog">Done</button></div>
   </dialog>
   <dialog id="deleteDialog" class="confirm-dialog"><div class="danger-icon">!</div><h2>Delete this item?</h2><p>This removes <strong id="deleteName"></strong> from your inventory. This action cannot be undone.</p><div class="dialog-actions"><button class="secondary" id="cancelDelete">Cancel</button><button class="danger" id="confirmDelete">Delete item</button></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>

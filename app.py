@@ -4,15 +4,20 @@
 import json
 import hashlib
 import hmac
+import os
 import secrets
+import smtplib
 import sqlite3
 import uuid
+from email.message import EmailMessage
+from html import escape
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "inventory.db"
+RESTOCK_EMAIL_TO = "communitysevainventory@gmail.com"
 
 
 def connect():
@@ -72,6 +77,13 @@ def initialize_database():
                 inventory_id INTEGER NOT NULL,
                 quantity_used INTEGER NOT NULL CHECK(quantity_used > 0),
                 FOREIGN KEY(seva_id) REFERENCES sevas(id) ON DELETE CASCADE,
+                FOREIGN KEY(inventory_id) REFERENCES inventory(id) ON DELETE CASCADE
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS low_stock_alerts (
+                inventory_id INTEGER PRIMARY KEY,
+                notified_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(inventory_id) REFERENCES inventory(id) ON DELETE CASCADE
             )
         """)
@@ -149,6 +161,97 @@ def validate_seva(payload):
     return {"name": name, "seva_date": seva_date, "items": items}, errors
 
 
+def low_stock_items(db):
+    return [dict(row) for row in db.execute("""
+        SELECT id, name, quantity, reorder_level
+        FROM inventory
+        WHERE quantity <= reorder_level
+        ORDER BY name COLLATE NOCASE
+    """)]
+
+
+def send_restock_email(items):
+    host = os.environ.get("SMTP_HOST", "").strip()
+    username = os.environ.get("SMTP_USER", "").strip()
+    password = os.environ.get("SMTP_PASSWORD", "")
+    sender = os.environ.get("SMTP_FROM", username or RESTOCK_EMAIL_TO).strip()
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    use_tls = os.environ.get("SMTP_USE_TLS", "true").lower() != "false"
+    if not host or not username or not password:
+        return {"sent": False, "configured": False, "message": "SMTP email is not configured."}
+
+    rows = "".join(
+        "<tr>"
+        f"<td>{escape(item['name'])}</td>"
+        f"<td>{item['quantity']}</td>"
+        f"<td>{item['reorder_level']}</td>"
+        "</tr>"
+        for item in items
+    )
+    html = f"""
+    <p>The following inventory items require restock attention:</p>
+    <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th>Item required</th>
+          <th>Current quantity</th>
+          <th>Minimum inventory quantity</th>
+        </tr>
+      </thead>
+      <tbody>{rows}</tbody>
+    </table>
+    """
+    text = "The following inventory items require restock attention:\n\n"
+    text += "Item required | Current quantity | Minimum inventory quantity\n"
+    text += "\n".join(f"{item['name']} | {item['quantity']} | {item['reorder_level']}" for item in items)
+
+    message = EmailMessage()
+    message["Subject"] = "Inventory restock attention required"
+    message["From"] = sender
+    message["To"] = RESTOCK_EMAIL_TO
+    message.set_content(text)
+    message.add_alternative(html, subtype="html")
+
+    try:
+        with smtplib.SMTP(host, port, timeout=10) as smtp:
+            if use_tls:
+                smtp.starttls()
+            smtp.login(username, password)
+            smtp.send_message(message)
+        return {"sent": True, "configured": True, "message": f"Email sent to {RESTOCK_EMAIL_TO}."}
+    except Exception as exc:
+        return {"sent": False, "configured": True, "message": f"Email could not be sent: {exc}"}
+
+
+def process_low_stock_notifications(db):
+    current_items = low_stock_items(db)
+    current_ids = {item["id"] for item in current_items}
+    if current_ids:
+        db.execute(
+            "DELETE FROM low_stock_alerts WHERE inventory_id NOT IN ({})".format(",".join("?" for _ in current_ids)),
+            list(current_ids),
+        )
+    else:
+        db.execute("DELETE FROM low_stock_alerts")
+        return {"sent": False, "configured": True, "message": ""}
+
+    already_notified = {
+        row["inventory_id"]
+        for row in db.execute("SELECT inventory_id FROM low_stock_alerts")
+    }
+    new_attention_items = [item for item in current_items if item["id"] not in already_notified]
+    if not new_attention_items:
+        return {"sent": False, "configured": True, "message": ""}
+
+    result = send_restock_email(current_items)
+    if result["sent"]:
+        db.executemany(
+            "INSERT OR REPLACE INTO low_stock_alerts (inventory_id, notified_at) VALUES (?, CURRENT_TIMESTAMP)",
+            [(item["id"],) for item in current_items],
+        )
+    return result
+
+
 class InventoryHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT / "static"), **kwargs)
@@ -210,6 +313,7 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                 sql += " AND quantity > reorder_level"
             sql += " ORDER BY updated_at DESC, id DESC"
             with connect() as db:
+                notification = process_low_stock_notifications(db)
                 items = [dict(row) for row in db.execute(sql, args)]
                 stats = dict(db.execute("""
                     SELECT COUNT(*) total_items,
@@ -218,7 +322,32 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                            COALESCE(SUM(CASE WHEN quantity <= reorder_level THEN 1 ELSE 0 END), 0) low_stock
                     FROM inventory
                 """).fetchone())
+                notified_count = db.execute("SELECT COUNT(*) FROM low_stock_alerts").fetchone()[0]
+                stats["restock_email_to"] = RESTOCK_EMAIL_TO
+                stats["restock_email_sent"] = stats["low_stock"] > 0 and notified_count > 0
+                stats["restock_email_message"] = notification.get("message", "")
             self.json_response({"items": items, "stats": stats})
+            return
+        if parsed.path == "/api/sevas":
+            if self.current_user() is None:
+                self.json_response({"error": "Please log in."}, 401)
+                return
+            with connect() as db:
+                sevas = [dict(row) for row in db.execute("""
+                    SELECT id, name, seva_date, created_at
+                    FROM sevas
+                    ORDER BY seva_date DESC, created_at DESC, id DESC
+                """)]
+                for seva in sevas:
+                    seva["items"] = [dict(row) for row in db.execute("""
+                        SELECT COALESCE(inventory.name, 'Deleted item') AS name,
+                               seva_items.quantity_used
+                        FROM seva_items
+                        LEFT JOIN inventory ON inventory.id = seva_items.inventory_id
+                        WHERE seva_items.seva_id = ?
+                        ORDER BY inventory.name COLLATE NOCASE
+                    """, (seva["id"],))]
+            self.json_response({"sevas": sevas})
             return
         if parsed.path.startswith("/api/"):
             self.json_response({"error": "Not found."}, 404)
@@ -322,7 +451,8 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                         "UPDATE inventory SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                         (item["quantity"], item["id"]),
                     )
-            self.json_response({"message": "Seva saved.", "id": seva_id}, 201)
+                notification = process_low_stock_notifications(db)
+            self.json_response({"message": "Seva saved.", "id": seva_id, "notification": notification}, 201)
             return
 
         if self.path != "/api/items":
@@ -347,6 +477,8 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                     [values[c] for c in columns],
                 )
                 item = dict(db.execute("SELECT * FROM inventory WHERE id = ?", (cursor.lastrowid,)).fetchone())
+                notification = process_low_stock_notifications(db)
+            item["notification"] = notification
             self.json_response(item, 201)
         except sqlite3.IntegrityError:
             self.json_response({"error": "That SKU already exists.", "fields": {"sku": "SKU must be unique."}}, 409)
@@ -383,6 +515,8 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                     self.json_response({"error": "Item not found."}, 404)
                     return
                 item = dict(db.execute("SELECT * FROM inventory WHERE id = ?", (item_id,)).fetchone())
+                notification = process_low_stock_notifications(db)
+            item["notification"] = notification
             self.json_response(item)
         except sqlite3.IntegrityError:
             self.json_response({"error": "That SKU already exists.", "fields": {"sku": "SKU must be unique."}}, 409)
