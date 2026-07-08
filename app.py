@@ -20,6 +20,22 @@ DB_PATH = ROOT / "inventory.db"
 RESTOCK_EMAIL_TO = "communitysevainventory@gmail.com"
 
 
+def load_dotenv(path=ROOT / ".env"):
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
+load_dotenv()
+
+
 def connect():
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row

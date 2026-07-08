@@ -33,18 +33,23 @@ Open <http://127.0.0.1:8000> in a browser. Stop the server with `Ctrl+C`.
 
 ## Email notifications
 
-Restock emails are sent to `communitysevainventory@gmail.com` when an item newly enters the needs-attention state. Configure SMTP before starting the app:
+Restock emails are sent to `communitysevainventory@gmail.com` when an item newly enters the needs-attention state.
 
-```bash
-export SMTP_HOST="smtp.gmail.com"
-export SMTP_PORT="587"
-export SMTP_USER="communitysevainventory@gmail.com"
-export SMTP_PASSWORD="your-gmail-app-password"
-export SMTP_FROM="communitysevainventory@gmail.com"
-python3 app.py
+Create a local `.env` file in the project folder:
+
+```text
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=communitysevainventory@gmail.com
+SMTP_PASSWORD=your-gmail-app-password
+SMTP_FROM=communitysevainventory@gmail.com
 ```
 
+You can copy `.env.example` to `.env` and replace `your-gmail-app-password`.
+
 For Gmail, use an app password rather than the normal account password.
+
+The `.env` file is ignored by Git so the app password does not get committed.
 
 To test only the email settings, run:
 
