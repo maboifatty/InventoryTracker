@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Inventory Master</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20260708">
 </head>
 <body>
   <section class="auth-screen" id="authScreen">
@@ -65,7 +65,6 @@
       <div class="form-grid">
         <label>Seva Name <span>*</span><input name="name" maxlength="120" required placeholder="e.g. Annadanam"><small class="error"></small></label>
         <label>Seva Date <span>*</span><input name="seva_date" type="date" required><small class="error"></small></label>
-        <label class="full">Location<input name="location" maxlength="160" placeholder="Optional location"><small class="error"></small></label>
         <div class="full seva-items-field">
           <div class="seva-items-head"><strong>Inventory items used</strong><small>Enter the quantity used for each item. Leave unused items as 0.</small></div>
           <div id="sevaItems" class="seva-items"></div>
@@ -104,6 +103,6 @@
   </dialog>
   <dialog id="deleteDialog" class="confirm-dialog"><div class="danger-icon">!</div><h2>Delete this item?</h2><p>This removes <strong id="deleteName"></strong> from your inventory. This action cannot be undone.</p><div class="dialog-actions"><button class="secondary" id="cancelDelete">Cancel</button><button class="danger" id="confirmDelete">Delete item</button></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js"></script>
+  <script src="app.js?v=20260708"></script>
 </body>
 </html>
