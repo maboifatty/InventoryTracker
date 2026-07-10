@@ -28,6 +28,7 @@ Open <http://127.0.0.1:8000> in a browser. Stop the server with `Ctrl+C`.
 - Record sevas and subtract used quantities from inventory stock
 - View a read-only log of past sevas, dates, and items used
 - Edit or delete past sevas while automatically restoring/adjusting inventory
+- Manage sevas from a single Seva master panel with Breakfast/Lunch type tracking
 - Stock status and reorder alerts
 - Restock email notification support for items needing attention
 - Persistent local SQLite storage

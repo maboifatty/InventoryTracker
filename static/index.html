@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Inventory Master</title>
-  <link rel="stylesheet" href="styles.css?v=20260708">
+  <link rel="stylesheet" href="styles.css?v=20260710">
 </head>
 <body>
   <section class="auth-screen" id="authScreen">
@@ -24,7 +24,7 @@
 
   <header class="topbar app-only" hidden>
     <div class="brand"><span class="brand-mark">IM</span><div><strong>Inventory Master</strong><small>Stock control, made simple</small></div></div>
-    <div class="top-actions"><span id="signedInUser"></span><button class="secondary" id="logout">Log out</button><button class="primary seva-action" id="viewSevas">View sevas</button><button class="primary seva-action" id="editSevas">✎ Edit sevas</button><button class="primary inventory-action" id="editInventory">✎ Edit inventory</button><button class="primary seva-action" id="addSeva">＋ Add seva</button><button class="primary inventory-action" id="addItem">＋ Add item</button></div>
+    <div class="top-actions"><span id="signedInUser"></span><button class="secondary" id="logout">Log out</button><button class="primary seva-action" id="sevaMaster">Seva master</button><button class="primary inventory-action" id="editInventory">✎ Edit inventory</button><button class="primary inventory-action" id="addItem">＋ Add item</button></div>
   </header>
   <main id="appMain" class="app-only" hidden>
     <section class="welcome">
@@ -91,11 +91,11 @@
   </dialog>
   <dialog id="sevaEditDialog">
     <form id="sevaEditForm" novalidate>
-      <div class="dialog-head"><div><h2>Edit sevas</h2><p>Select a seva to update details, item quantities, or remove it.</p></div><button type="button" class="icon-btn" id="closeSevaEditDialog" aria-label="Close">×</button></div>
+      <div class="dialog-head"><div><h2>Seva master</h2><p>Add, review, update, or remove sevas from one place.</p></div><button type="button" class="icon-btn" id="closeSevaEditDialog" aria-label="Close">×</button></div>
       <div class="seva-edit-layout">
-        <div id="sevaEditList" class="seva-edit-list"></div>
+        <div class="seva-edit-list-wrap"><button type="button" class="primary seva-action seva-add-inline" id="addSevaInMaster">＋ Add seva</button><div id="sevaEditList" class="seva-edit-list"></div></div>
         <div id="sevaEditPanel" class="seva-edit-panel">
-          <div class="seva-empty">Select a seva to edit.</div>
+          <div class="seva-empty">Select a seva to edit, or add a new seva.</div>
         </div>
       </div>
       <div class="dialog-actions"><button type="button" class="danger" id="deleteSeva" disabled>Delete seva</button><button type="button" class="secondary" id="cancelSevaEditDialog">Cancel</button><button type="submit" class="primary seva-action" id="saveSevaEdit" disabled>Save seva</button></div>
@@ -103,6 +103,6 @@
   </dialog>
   <dialog id="deleteDialog" class="confirm-dialog"><div class="danger-icon">!</div><h2>Delete this item?</h2><p>This removes <strong id="deleteName"></strong> from your inventory. This action cannot be undone.</p><div class="dialog-actions"><button class="secondary" id="cancelDelete">Cancel</button><button class="danger" id="confirmDelete">Delete item</button></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=20260708"></script>
+  <script src="app.js?v=20260710"></script>
 </body>
 </html>

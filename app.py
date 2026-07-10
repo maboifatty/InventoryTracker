@@ -83,6 +83,7 @@ def initialize_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 location TEXT NOT NULL DEFAULT '',
+                seva_type TEXT NOT NULL DEFAULT '',
                 seva_date TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
@@ -93,6 +94,8 @@ def initialize_database():
         }
         if "location" not in columns:
             db.execute("ALTER TABLE sevas ADD COLUMN location TEXT NOT NULL DEFAULT ''")
+        if "seva_type" not in columns:
+            db.execute("ALTER TABLE sevas ADD COLUMN seva_type TEXT NOT NULL DEFAULT ''")
         db.execute("""
             CREATE TABLE IF NOT EXISTS seva_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -159,6 +162,7 @@ def validate_seva(payload):
     errors = {}
     name = str(payload.get("name", "")).strip()
     location = str(payload.get("location", "")).strip()
+    seva_type = str(payload.get("seva_type", "")).strip().lower()
     seva_date = str(payload.get("seva_date", "")).strip()
     raw_items = payload.get("items", [])
     items = []
@@ -166,6 +170,8 @@ def validate_seva(payload):
         errors["name"] = "Seva name is required."
     if not seva_date:
         errors["seva_date"] = "Seva date is required."
+    if seva_type not in {"breakfast", "lunch"}:
+        errors["seva_type"] = "Choose breakfast or lunch."
     if not isinstance(raw_items, list):
         errors["items"] = "Item quantities are required."
         raw_items = []
@@ -182,7 +188,7 @@ def validate_seva(payload):
             items.append({"id": item_id, "quantity": quantity})
     if "items" not in errors and not items:
         errors["items"] = "Enter a quantity for at least one item."
-    return {"name": name, "location": location, "seva_date": seva_date, "items": items}, errors
+    return {"name": name, "location": location, "seva_type": seva_type, "seva_date": seva_date, "items": items}, errors
 
 
 def low_stock_items(db):
@@ -411,7 +417,7 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                 return
             with connect() as db:
                 sevas = [dict(row) for row in db.execute("""
-                    SELECT id, name, location, seva_date, created_at
+                    SELECT id, name, location, seva_type, seva_date, created_at
                     FROM sevas
                     ORDER BY seva_date DESC, created_at DESC, id DESC
                 """)]
@@ -502,8 +508,8 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                     self.json_response({"error": "Please correct the highlighted fields.", "fields": errors}, 422)
                     return
                 cursor = db.execute(
-                    "INSERT INTO sevas (name, location, seva_date) VALUES (?, ?, ?)",
-                    (values["name"], values["location"], values["seva_date"]),
+                    "INSERT INTO sevas (name, location, seva_type, seva_date) VALUES (?, ?, ?, ?)",
+                    (values["name"], values["location"], values["seva_type"], values["seva_date"]),
                 )
                 seva_id = cursor.lastrowid
                 apply_seva_items(db, seva_id, values["items"])
@@ -564,8 +570,8 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                     self.json_response({"error": "Please correct the highlighted fields.", "fields": errors}, 422)
                     return
                 db.execute(
-                    "UPDATE sevas SET name = ?, location = ?, seva_date = ? WHERE id = ?",
-                    (values["name"], values["location"], values["seva_date"], seva_id),
+                    "UPDATE sevas SET name = ?, location = ?, seva_type = ?, seva_date = ? WHERE id = ?",
+                    (values["name"], values["location"], values["seva_type"], values["seva_date"], seva_id),
                 )
                 apply_seva_items(db, seva_id, values["items"], old_items)
                 notification = process_low_stock_notifications(db)
