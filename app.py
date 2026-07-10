@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "inventory.db"
 RESTOCK_EMAIL_TO = "communitysevainventory@gmail.com"
+SEVA_NAMES = {"Oakland", "Santa Clara", "Fremont"}
 
 
 def load_dotenv(path=ROOT / ".env"):
@@ -166,8 +167,8 @@ def validate_seva(payload):
     seva_date = str(payload.get("seva_date", "")).strip()
     raw_items = payload.get("items", [])
     items = []
-    if not name:
-        errors["name"] = "Seva name is required."
+    if name not in SEVA_NAMES:
+        errors["name"] = "Choose Oakland, Santa Clara, or Fremont."
     if not seva_date:
         errors["seva_date"] = "Seva date is required."
     if seva_type not in {"breakfast", "lunch"}:

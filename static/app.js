@@ -165,7 +165,7 @@ function renderSevaEditList() {
 }
 function openAddSevaInMaster() {
   editingSevaId = null; sevaPanelMode = 'add'; clearErrors(sevaEditForm); renderSevaEditList();
-  renderSevaDetailPanel({name:'', location:'', seva_type:'lunch', seva_date: todayValue(), items: []}, 'add');
+  renderSevaDetailPanel({name:'Oakland', location:'', seva_type:'lunch', seva_date: todayValue(), items: []}, 'add');
   $('#saveSevaEdit').disabled = false; $('#deleteSeva').disabled = true;
 }
 function openSelectedSeva(sevaId) {
@@ -177,31 +177,38 @@ function openSelectedSeva(sevaId) {
 }
 function renderSevaDetailPanel(seva, mode) {
   const oldById = Object.fromEntries((seva.items || []).map(item => [item.id, item.quantity_used]));
+  const selectedItems = items.filter(item => oldById[item.id]);
   sevaEditPanel.innerHTML = `<div class="form-grid seva-edit-fields">
-    <label>Seva Name <span>*</span><input name="name" maxlength="120" required value="${esc(seva.name)}"><small class="error"></small></label>
+    <label>Seva Name <span>*</span><select name="name" required>${['Oakland','Santa Clara','Fremont'].map(name => `<option value="${name}" ${seva.name === name ? 'selected' : ''}>${name}</option>`).join('')}</select><small class="error"></small></label>
     <label>Seva Date <span>*</span><input name="seva_date" type="date" required value="${esc(seva.seva_date)}"><small class="error"></small></label>
     <label>Type <span>*</span><select name="seva_type" required><option value="breakfast" ${seva.seva_type === 'breakfast' ? 'selected' : ''}>Breakfast</option><option value="lunch" ${seva.seva_type === 'lunch' || !seva.seva_type ? 'selected' : ''}>Lunch</option></select><small class="error"></small></label>
-    <label class="full">Location<input name="location" maxlength="160" value="${esc(seva.location || '')}" placeholder="Optional location"><small class="error"></small></label>
     <div class="full seva-items-field">
-      <div class="seva-items-head"><strong>Inventory items used</strong><small>${mode === 'add' ? 'Enter quantities used in this seva.' : 'Adjust quantities used in this seva.'}</small></div>
-      <div class="seva-items">${items.map(item => {
-        const oldQuantity = oldById[item.id] || 0;
-        const available = item.quantity + oldQuantity;
-        return `<label class="seva-item">
-          <span><strong>${esc(item.name)}</strong><small>${number.format(available)} available including this seva</small></span>
-          <input name="item_${item.id}" data-edit-seva-item-id="${item.id}" type="number" min="0" max="${available}" step="1" value="${oldQuantity}" aria-label="${esc(item.name)} quantity used">
-          <small class="error" data-error-for="item_${item.id}"></small>
-        </label>`;
-      }).join('')}</div>
+      <div class="seva-items-head"><strong>Inventory items used</strong><small>Select an inventory item, then enter the quantity used.</small></div>
+      <label class="inventory-picker">Add inventory item<select id="sevaInventoryPicker"><option value="">Choose an item…</option>${items.map(item => `<option value="${item.id}">${esc(item.name)} (${number.format(item.quantity)} in inventory)</option>`).join('')}</select></label>
+      <div class="seva-items selected-seva-items">${selectedItems.map(item => sevaItemRow(item, oldById[item.id], item.quantity + oldById[item.id])).join('')}</div>
       <small class="error" data-error-for="items"></small>
     </div>
   </div>`;
 }
-function sevaPayloadFrom(scope, selector='[data-item-id]') {
+function sevaItemRow(item, quantity=0, available=item.quantity) {
+  return `<label class="seva-item" data-selected-seva-item="${item.id}">
+    <span><strong>${esc(item.name)}</strong><small>${number.format(available)} in inventory</small></span>
+    <input name="item_${item.id}" data-edit-seva-item-id="${item.id}" type="number" min="0" max="${available}" step="1" value="${quantity}" aria-label="${esc(item.name)} quantity used">
+    <button type="button" class="action-btn remove-seva-item" data-remove-seva-item="${item.id}" title="Remove item">Remove</button>
+    <small class="error" data-error-for="item_${item.id}"></small>
+  </label>`;
+}
+function addSelectedSevaItem(itemId) {
+  const item = items.find(entry => entry.id === itemId);
+  const list = sevaEditPanel.querySelector('.selected-seva-items');
+  if (!item || !list || list.querySelector(`[data-selected-seva-item="${itemId}"]`)) return;
+  list.insertAdjacentHTML('beforeend', sevaItemRow(item, 0, item.quantity));
+}
+function sevaPayloadFrom(scope, selector='[data-edit-seva-item-id]') {
   const itemInputs = [...scope.querySelectorAll(selector)];
   return {
     name: scope.name.value,
-    location: scope.location?.value || '',
+    location: '',
     seva_type: scope.seva_type?.value || '',
     seva_date: scope.seva_date.value,
     items: itemInputs.map(input => ({id: Number(input.dataset.itemId || input.dataset.editSevaItemId), quantity: Number(input.value || 0)}))
@@ -280,6 +287,16 @@ sevaForm.addEventListener('submit', async e => {
 sevaEditList.addEventListener('click', e => {
   const choice = e.target.closest('[data-seva-choice]');
   if (choice) openSelectedSeva(Number(choice.dataset.sevaChoice));
+});
+sevaEditPanel.addEventListener('change', e => {
+  if (e.target.id === 'sevaInventoryPicker' && e.target.value) {
+    addSelectedSevaItem(Number(e.target.value));
+    e.target.value = '';
+  }
+});
+sevaEditPanel.addEventListener('click', e => {
+  const remove = e.target.closest('[data-remove-seva-item]');
+  if (remove) remove.closest('[data-selected-seva-item]')?.remove();
 });
 sevaEditForm.addEventListener('submit', async e => {
   e.preventDefault(); if (sevaPanelMode === 'none') return; clearErrors(sevaEditForm);
