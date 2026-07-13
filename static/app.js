@@ -1,6 +1,6 @@
 const $ = (s) => document.querySelector(s);
 const body = $('#itemsBody'), empty = $('#emptyState'), form = $('#itemForm');
-const dialog = $('#itemDialog'), deleteDialog = $('#deleteDialog'), authForm = $('#authForm');
+const dialog = $('#itemDialog'), deleteDialog = $('#deleteDialog'), authForm = $('#authForm'), resetForm = $('#resetForm');
 const sevaDialog = $('#sevaDialog'), sevaForm = $('#sevaForm'), sevaItems = $('#sevaItems');
 const inventoryEditDialog = $('#inventoryEditDialog'), inventoryEditForm = $('#inventoryEditForm'), inventoryEditItems = $('#inventoryEditItems');
 const sevaLogDialog = $('#sevaLogDialog'), sevaLog = $('#sevaLog');
@@ -21,6 +21,7 @@ function stockStatus(item) {
 }
 function showApp() {
   $('#authScreen').hidden = true;
+  $('#resetScreen').hidden = true;
   document.querySelectorAll('.app-only').forEach(el => el.hidden = false);
   $('#signedInUser').textContent = signedInName ? `Signed in as ${signedInName}` : '';
   loadItems();
@@ -29,7 +30,19 @@ function showLogin() {
   authToken = ''; signedInName = '';
   localStorage.removeItem('inventoryToken'); localStorage.removeItem('inventoryUser');
   $('#authScreen').hidden = false;
+  $('#resetScreen').hidden = true;
   document.querySelectorAll('.app-only').forEach(el => el.hidden = true);
+}
+function showResetPassword(token='') {
+  authToken = ''; signedInName = '';
+  localStorage.removeItem('inventoryToken'); localStorage.removeItem('inventoryUser');
+  $('#authScreen').hidden = true;
+  $('#resetScreen').hidden = false;
+  document.querySelectorAll('.app-only').forEach(el => el.hidden = true);
+  resetForm.reset(); clearErrors(resetForm);
+  resetForm.token.value = token;
+  if (!token) showErrors(resetForm, {token: 'Reset link is missing. Please request a new one.'});
+  resetForm.password.focus();
 }
 async function loadItems() {
   const params = new URLSearchParams({search: $('#search').value, status: $('#statusFilter').value});
@@ -228,7 +241,7 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('en-US', {month:'short', day:'numeric', year:'numeric'}).format(new Date(year, month - 1, day));
 }
 function clearErrors(scope=document) { scope.querySelectorAll('.error').forEach(e=>e.textContent=''); scope.querySelectorAll('.invalid').forEach(e=>e.classList.remove('invalid')); }
-function showErrors(scope, fields={}) { clearErrors(scope); Object.entries(fields || {}).forEach(([name,msg])=>{ const input=scope.elements[name]; const custom=scope.querySelector(`[data-error-for="${name}"]`); if(input){input.classList.add('invalid');input.closest('label').querySelector('.error').textContent=msg;} else if(custom){custom.textContent=msg;} }); }
+function showErrors(scope, fields={}) { clearErrors(scope); Object.entries(fields || {}).forEach(([name,msg])=>{ const input=scope.elements[name]; const custom=scope.querySelector(`[data-error-for="${name}"]`); const label=input?.closest('label'); if(input && label){input.classList.add('invalid');label.querySelector('.error').textContent=msg;} else if(custom){custom.textContent=msg;} }); }
 function toast(message) { const el=$('#toast'); el.textContent=message; el.classList.add('show'); clearTimeout(timer); timer=setTimeout(()=>el.classList.remove('show'),2800); }
 function setAuthMode(create) {
   creatingUser = create; clearErrors(authForm); authForm.reset();
@@ -274,9 +287,24 @@ $('#forgotPassword').addEventListener('click', async () => {
     const res = await fetch('/api/forgot-password', apiOptions({method:'POST', body:JSON.stringify({username})}));
     const data = await res.json();
     if(!res.ok){ showErrors(authForm, data.fields); toast(data.error || 'Could not send reset email.'); return; }
-    toast(data.message || 'If that email is registered, a temporary password has been sent.');
+    toast(data.message || 'If that email is registered, a password reset link has been sent.');
   } catch { toast('Could not connect to the inventory service.'); }
   finally { button.disabled = false; button.textContent = 'Forgot password?'; }
+});
+
+resetForm.addEventListener('submit', async e => {
+  e.preventDefault(); clearErrors(resetForm);
+  const payload = Object.fromEntries(new FormData(resetForm));
+  const button = $('#resetSubmit'); button.disabled = true; button.textContent = 'Resetting…';
+  try {
+    const res = await fetch('/api/reset-password', apiOptions({method:'POST', body:JSON.stringify(payload)}));
+    const data = await res.json();
+    if(!res.ok){ showErrors(resetForm, data.fields); toast(data.error || 'Could not reset password.'); return; }
+    history.replaceState(null, '', '/');
+    showLogin();
+    toast(data.message || 'Password reset successfully. Please log in.');
+  } catch { toast('Could not connect to the inventory service.'); }
+  finally { button.disabled = false; button.textContent = 'Reset password'; }
 });
 
 form.addEventListener('submit', async e => {
@@ -386,6 +414,7 @@ $('#confirmDelete').addEventListener('click', async () => {
 });
 $('#togglePassword').onclick=()=>{ const input=authForm.password; const showing=input.type==='text'; input.type=showing?'password':'text'; $('#togglePassword').textContent=showing?'👁':'🙈'; input.focus(); };
 $('#switchAuth').onclick=()=>setAuthMode(!creatingUser);
+$('#backToLogin').onclick=()=>{ history.replaceState(null, '', '/'); showLogin(); };
 $('#logout').onclick=async()=>{ try{ await fetch('/api/logout', apiOptions({method:'POST'})); } finally { showLogin(); toast('Logged out.'); } };
 $('#addItem').onclick=()=>openForm(); $('#emptyAdd').onclick=()=>openForm(); $('#editInventory').onclick=()=>openInventoryEditForm(); $('#sevaMaster').onclick=()=>openSevaEdit(); $('#addSevaInMaster').onclick=()=>openAddSevaInMaster();
 $('#closeDialog').onclick=()=>dialog.close(); $('#cancelDialog').onclick=()=>dialog.close();
@@ -396,4 +425,6 @@ $('#closeSevaEditDialog').onclick=()=>sevaEditDialog.close(); $('#cancelSevaEdit
 $('#cancelDelete').onclick=()=>deleteDialog.close();
 $('#search').addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(loadItems,250)});
 $('#statusFilter').addEventListener('change',loadItems);
-if (authToken) showApp(); else showLogin();
+const resetToken = new URLSearchParams(window.location.search).get('token') || '';
+if (window.location.pathname === '/reset-password') showResetPassword(resetToken);
+else if (authToken) showApp(); else showLogin();

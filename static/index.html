@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Inventory Master</title>
-  <link rel="stylesheet" href="styles.css?v=20260713a">
+  <link rel="stylesheet" href="styles.css?v=20260713b">
 </head>
 <body>
   <section class="auth-screen" id="authScreen">
@@ -20,6 +20,22 @@
         <button class="auth-forgot" id="forgotPassword" type="button">Forgot password?</button>
       </form>
       <p class="auth-switch"><span id="authSwitchText">New here?</span> <button type="button" id="switchAuth">Create new user</button></p>
+    </div>
+  </section>
+
+  <section class="auth-screen" id="resetScreen" hidden>
+    <div class="auth-card">
+      <div class="auth-brand"><span class="brand-mark">IM</span><div><strong>Inventory Master</strong><small>Reset your password</small></div></div>
+      <p class="eyebrow">PASSWORD RESET</p>
+      <h1>Set new password</h1>
+      <p class="auth-copy">Enter your new password twice so we can make sure it matches.</p>
+      <form id="resetForm" novalidate>
+        <input name="token" type="hidden">
+        <label>New password <span>*</span><input name="password" type="password" autocomplete="new-password" required placeholder="Enter new password"><small class="error"></small></label>
+        <label>Re-enter password <span>*</span><input name="confirm_password" type="password" autocomplete="new-password" required placeholder="Re-enter new password"><small class="error"></small></label>
+        <button class="primary auth-submit" id="resetSubmit" type="submit">Reset password</button>
+      </form>
+      <p class="auth-switch"><button type="button" id="backToLogin">Back to login</button></p>
     </div>
   </section>
 
@@ -104,6 +120,6 @@
   </dialog>
   <dialog id="deleteDialog" class="confirm-dialog"><div class="danger-icon">!</div><h2>Delete this item?</h2><p>This removes <strong id="deleteName"></strong> from your inventory. This action cannot be undone.</p><div class="dialog-actions"><button class="secondary" id="cancelDelete">Cancel</button><button class="danger" id="confirmDelete">Delete item</button></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=20260713a"></script>
+  <script src="app.js?v=20260713b"></script>
 </body>
 </html>

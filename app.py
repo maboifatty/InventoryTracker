@@ -9,12 +9,13 @@ import secrets
 import smtplib
 import sqlite3
 import uuid
+from datetime import datetime, timedelta
 from email.message import EmailMessage
+from email.utils import parseaddr
 from html import escape
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
-from email.utils import parseaddr
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "inventory.db"
@@ -81,6 +82,16 @@ def initialize_database():
             )
         """)
         db.execute("""
+            CREATE TABLE IF NOT EXISTS password_resets (
+                token_hash TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                expires_at TEXT NOT NULL,
+                used_at TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        db.execute("""
             CREATE TABLE IF NOT EXISTS sevas (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -121,6 +132,10 @@ def hash_password(password, salt=None):
     salt = salt or secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 120_000)
     return salt, digest.hex()
+
+
+def hash_token(token):
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def validate_user_payload(payload):
@@ -270,7 +285,7 @@ def send_restock_email(items):
         return {"sent": False, "configured": True, "message": f"Email could not be sent: {exc}"}
 
 
-def send_password_reset_email(recipient, temporary_password):
+def send_password_reset_email(recipient, reset_url):
     host, username, password, sender, port, use_tls = smtp_settings()
     if not host or not username or not password:
         return {"sent": False, "configured": False, "message": "SMTP email is not configured."}
@@ -280,15 +295,15 @@ def send_password_reset_email(recipient, temporary_password):
     message["From"] = sender
     message["To"] = recipient
     message.set_content(
-        "Your Inventory Master password has been reset.\n\n"
-        f"Temporary password: {temporary_password}\n\n"
-        "Use this temporary password to log in."
+        "We received a request to reset your Inventory Master password.\n\n"
+        f"Reset your password here: {reset_url}\n\n"
+        "This link expires in 1 hour. If you did not request this, you can ignore this email."
     )
     message.add_alternative(
         f"""
-        <p>Your Inventory Master password has been reset.</p>
-        <p><strong>Temporary password:</strong> {escape(temporary_password)}</p>
-        <p>Use this temporary password to log in.</p>
+        <p>We received a request to reset your Inventory Master password.</p>
+        <p><a href="{escape(reset_url)}">Reset your password</a></p>
+        <p>This link expires in 1 hour. If you did not request this, you can ignore this email.</p>
         """,
         subtype="html",
     )
@@ -424,8 +439,17 @@ class InventoryHandler(SimpleHTTPRequestHandler):
             """, (token,)).fetchone()
         return dict(row) if row else None
 
+    def public_url(self, path):
+        host = self.headers.get("Host", "127.0.0.1:8000")
+        scheme = self.headers.get("X-Forwarded-Proto", "http")
+        return f"{scheme}://{host}{path}"
+
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/reset-password":
+            self.path = "/index.html"
+            super().do_GET()
+            return
         if parsed.path == "/api/items":
             if self.current_user() is None:
                 self.json_response({"error": "Please log in."}, 401)
@@ -549,20 +573,71 @@ class InventoryHandler(SimpleHTTPRequestHandler):
             with connect() as db:
                 row = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
                 if not row:
-                    self.json_response({"message": "If that email is registered, a temporary password has been sent."})
+                    self.json_response({"message": "If that email is registered, a password reset link has been sent."})
                     return
-                temporary_password = secrets.token_urlsafe(9)
-                result = send_password_reset_email(username, temporary_password)
+                token = secrets.token_urlsafe(32)
+                token_hash = hash_token(token)
+                expires_at = (datetime.utcnow() + timedelta(hours=1)).isoformat(timespec="seconds")
+                reset_url = self.public_url(f"/reset-password?token={token}")
+                db.execute("DELETE FROM password_resets WHERE user_id = ?", (row["id"],))
+                db.execute(
+                    "INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+                    (token_hash, row["id"], expires_at),
+                )
+                result = send_password_reset_email(username, reset_url)
                 if not result["sent"]:
+                    db.execute("DELETE FROM password_resets WHERE token_hash = ?", (token_hash,))
                     self.json_response({"error": result["message"]}, 503)
                     return
-                salt, password_hash = hash_password(temporary_password)
+            self.json_response({"message": "If that email is registered, a password reset link has been sent."})
+            return
+
+        if self.path == "/api/reset-password":
+            payload = self.read_json()
+            if payload is None:
+                self.json_response({"error": "Invalid JSON."}, 400)
+                return
+            token = str(payload.get("token", "")).strip()
+            password = str(payload.get("password", ""))
+            confirm_password = str(payload.get("confirm_password", ""))
+            errors = {}
+            if not token:
+                errors["token"] = "Reset link is missing."
+            if not password:
+                errors["password"] = "New password is required."
+            if not confirm_password:
+                errors["confirm_password"] = "Please re-enter the new password."
+            elif password and password != confirm_password:
+                errors["confirm_password"] = "Passwords must match."
+            if errors:
+                self.json_response({"error": "Please correct the highlighted fields.", "fields": errors}, 422)
+                return
+            token_hash = hash_token(token)
+            with connect() as db:
+                row = db.execute("""
+                    SELECT password_resets.*, users.id AS account_id
+                    FROM password_resets
+                    JOIN users ON users.id = password_resets.user_id
+                    WHERE password_resets.token_hash = ?
+                """, (token_hash,)).fetchone()
+                if not row or row["used_at"]:
+                    self.json_response({"error": "This reset link is invalid or has already been used."}, 400)
+                    return
+                if datetime.fromisoformat(row["expires_at"]) < datetime.utcnow():
+                    db.execute("DELETE FROM password_resets WHERE token_hash = ?", (token_hash,))
+                    self.json_response({"error": "This reset link has expired. Please request a new one."}, 400)
+                    return
+                salt, password_hash = hash_password(password)
                 db.execute(
                     "UPDATE users SET password_salt = ?, password_hash = ? WHERE id = ?",
-                    (salt, password_hash, row["id"]),
+                    (salt, password_hash, row["account_id"]),
                 )
-                db.execute("DELETE FROM sessions WHERE user_id = ?", (row["id"],))
-            self.json_response({"message": "If that email is registered, a temporary password has been sent."})
+                db.execute("DELETE FROM sessions WHERE user_id = ?", (row["account_id"],))
+                db.execute(
+                    "UPDATE password_resets SET used_at = CURRENT_TIMESTAMP WHERE token_hash = ?",
+                    (token_hash,),
+                )
+            self.json_response({"message": "Password reset successfully. Please log in with your new password."})
             return
 
         if self.path == "/api/logout":
