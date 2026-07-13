@@ -20,7 +20,7 @@ Open <http://127.0.0.1:8000> in a browser. Stop the server with `Ctrl+C`.
 
 ## Features
 
-- Login page with create-user option
+- Login page with email-based user IDs, create-user option, and forgot-password reset email
 - Password visibility toggle
 - User credentials stored locally in SQLite with password hashing
 - Create, edit, search, filter, and delete inventory master records

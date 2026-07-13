@@ -234,10 +234,13 @@ function setAuthMode(create) {
   creatingUser = create; clearErrors(authForm); authForm.reset();
   $('#authMode').textContent = create ? 'NEW USER' : 'WELCOME BACK';
   $('#authTitle').textContent = create ? 'Create user' : 'Log in';
-  $('#authCopy').textContent = create ? 'Create a user name and password for this local inventory app.' : 'Enter your user name and password to open the inventory overview.';
+  $('#authCopy').textContent = create ? 'Create an email login and password for this local inventory app.' : 'Enter your email and password to open the inventory overview.';
   $('#authSubmit').textContent = create ? 'Create user' : 'Log in';
   $('#authSwitchText').textContent = create ? 'Already have a user?' : 'New here?';
   $('#switchAuth').textContent = create ? 'Log in instead' : 'Create new user';
+  $('#forgotPassword').hidden = create;
+  authForm.username.placeholder = 'Enter email address';
+  authForm.password.autocomplete = create ? 'new-password' : 'current-password';
   authForm.password.type = 'password';
   $('#togglePassword').textContent = '👁';
 }
@@ -256,6 +259,24 @@ authForm.addEventListener('submit', async e => {
     toast('Logged in.'); showApp();
   } catch { toast('Could not connect to the inventory service.'); }
   finally { button.disabled=false; button.textContent=creatingUser?'Create user':'Log in'; }
+});
+
+$('#forgotPassword').addEventListener('click', async () => {
+  clearErrors(authForm);
+  const username = authForm.username.value.trim();
+  if (!username) {
+    showErrors(authForm, {username: 'Enter your email address first.'});
+    authForm.username.focus();
+    return;
+  }
+  const button = $('#forgotPassword'); button.disabled = true; button.textContent = 'Sending reset…';
+  try {
+    const res = await fetch('/api/forgot-password', apiOptions({method:'POST', body:JSON.stringify({username})}));
+    const data = await res.json();
+    if(!res.ok){ showErrors(authForm, data.fields); toast(data.error || 'Could not send reset email.'); return; }
+    toast(data.message || 'If that email is registered, a temporary password has been sent.');
+  } catch { toast('Could not connect to the inventory service.'); }
+  finally { button.disabled = false; button.textContent = 'Forgot password?'; }
 });
 
 form.addEventListener('submit', async e => {

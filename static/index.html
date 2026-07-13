@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Inventory Master</title>
-  <link rel="stylesheet" href="styles.css?v=20260710b">
+  <link rel="stylesheet" href="styles.css?v=20260713a">
 </head>
 <body>
   <section class="auth-screen" id="authScreen">
@@ -12,11 +12,12 @@
       <div class="auth-brand"><span class="brand-mark">IM</span><div><strong>Inventory Master</strong><small>Sign in to manage stock</small></div></div>
       <p class="eyebrow" id="authMode">WELCOME BACK</p>
       <h1 id="authTitle">Log in</h1>
-      <p class="auth-copy" id="authCopy">Enter your user name and password to open the inventory overview.</p>
+      <p class="auth-copy" id="authCopy">Enter your email and password to open the inventory overview.</p>
       <form id="authForm" novalidate>
-        <label>User name <span>*</span><input name="username" autocomplete="username" required placeholder="Enter user name"><small class="error"></small></label>
+        <label>Email <span>*</span><input name="username" type="email" autocomplete="email" required placeholder="Enter email address"><small class="error"></small></label>
         <label>Password <span>*</span><div class="password-wrap"><input name="password" type="password" autocomplete="current-password" required placeholder="Enter password"><button type="button" id="togglePassword" aria-label="Show password">👁</button></div><small class="error"></small></label>
         <button class="primary auth-submit" id="authSubmit" type="submit">Log in</button>
+        <button class="auth-forgot" id="forgotPassword" type="button">Forgot password?</button>
       </form>
       <p class="auth-switch"><span id="authSwitchText">New here?</span> <button type="button" id="switchAuth">Create new user</button></p>
     </div>
@@ -103,6 +104,6 @@
   </dialog>
   <dialog id="deleteDialog" class="confirm-dialog"><div class="danger-icon">!</div><h2>Delete this item?</h2><p>This removes <strong id="deleteName"></strong> from your inventory. This action cannot be undone.</p><div class="dialog-actions"><button class="secondary" id="cancelDelete">Cancel</button><button class="danger" id="confirmDelete">Delete item</button></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=20260710b"></script>
+  <script src="app.js?v=20260713a"></script>
 </body>
 </html>

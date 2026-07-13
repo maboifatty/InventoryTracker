@@ -14,6 +14,7 @@ from html import escape
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from email.utils import parseaddr
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "inventory.db"
@@ -124,13 +125,33 @@ def hash_password(password, salt=None):
 
 def validate_user_payload(payload):
     errors = {}
-    username = str(payload.get("username", "")).strip()
+    username = str(payload.get("username", "")).strip().lower()
     password = str(payload.get("password", ""))
     if not username:
-        errors["username"] = "User name is required."
+        errors["username"] = "Email is required."
+    elif not is_valid_email(username):
+        errors["username"] = "Enter a valid email address."
     if not password:
         errors["password"] = "Password is required."
     return username, password, errors
+
+
+def is_valid_email(value):
+    parsed_name, parsed_email = parseaddr(value)
+    if parsed_name or parsed_email != value:
+        return False
+    local, separator, domain = value.partition("@")
+    return bool(local and separator and "." in domain and " " not in value)
+
+
+def smtp_settings():
+    host = os.environ.get("SMTP_HOST", "").strip()
+    username = os.environ.get("SMTP_USER", "").strip()
+    password = os.environ.get("SMTP_PASSWORD", "")
+    sender = os.environ.get("SMTP_FROM", username or RESTOCK_EMAIL_TO).strip()
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    use_tls = os.environ.get("SMTP_USE_TLS", "true").lower() != "false"
+    return host, username, password, sender, port, use_tls
 
 
 def validate(payload, existing=None):
@@ -202,12 +223,7 @@ def low_stock_items(db):
 
 
 def send_restock_email(items):
-    host = os.environ.get("SMTP_HOST", "").strip()
-    username = os.environ.get("SMTP_USER", "").strip()
-    password = os.environ.get("SMTP_PASSWORD", "")
-    sender = os.environ.get("SMTP_FROM", username or RESTOCK_EMAIL_TO).strip()
-    port = int(os.environ.get("SMTP_PORT", "587"))
-    use_tls = os.environ.get("SMTP_USE_TLS", "true").lower() != "false"
+    host, username, password, sender, port, use_tls = smtp_settings()
     if not host or not username or not password:
         return {"sent": False, "configured": False, "message": "SMTP email is not configured."}
 
@@ -252,6 +268,40 @@ def send_restock_email(items):
         return {"sent": True, "configured": True, "message": f"Email sent to {RESTOCK_EMAIL_TO}."}
     except Exception as exc:
         return {"sent": False, "configured": True, "message": f"Email could not be sent: {exc}"}
+
+
+def send_password_reset_email(recipient, temporary_password):
+    host, username, password, sender, port, use_tls = smtp_settings()
+    if not host or not username or not password:
+        return {"sent": False, "configured": False, "message": "SMTP email is not configured."}
+
+    message = EmailMessage()
+    message["Subject"] = "Inventory Master password reset"
+    message["From"] = sender
+    message["To"] = recipient
+    message.set_content(
+        "Your Inventory Master password has been reset.\n\n"
+        f"Temporary password: {temporary_password}\n\n"
+        "Use this temporary password to log in."
+    )
+    message.add_alternative(
+        f"""
+        <p>Your Inventory Master password has been reset.</p>
+        <p><strong>Temporary password:</strong> {escape(temporary_password)}</p>
+        <p>Use this temporary password to log in.</p>
+        """,
+        subtype="html",
+    )
+
+    try:
+        with smtplib.SMTP(host, port, timeout=10) as smtp:
+            if use_tls:
+                smtp.starttls()
+            smtp.login(username, password)
+            smtp.send_message(message)
+        return {"sent": True, "configured": True, "message": f"Password reset email sent to {recipient}."}
+    except Exception as exc:
+        return {"sent": False, "configured": True, "message": f"Password reset email could not be sent: {exc}"}
 
 
 def process_low_stock_notifications(db):
@@ -458,7 +508,7 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                     )
                 self.json_response({"message": "User created."}, 201)
             except sqlite3.IntegrityError:
-                self.json_response({"error": "That user name already exists.", "fields": {"username": "Choose another user name."}}, 409)
+                self.json_response({"error": "That email already exists.", "fields": {"username": "Choose another email."}}, 409)
             return
 
         if self.path == "/api/login":
@@ -479,7 +529,40 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                         db.execute("INSERT INTO sessions (token, user_id) VALUES (?, ?)", (token, row["id"]))
                         self.json_response({"token": token, "username": row["username"]})
                         return
-            self.json_response({"error": "Invalid user name or password."}, 401)
+            self.json_response({"error": "Invalid email or password."}, 401)
+            return
+
+        if self.path == "/api/forgot-password":
+            payload = self.read_json()
+            if payload is None:
+                self.json_response({"error": "Invalid JSON."}, 400)
+                return
+            username = str(payload.get("username", "")).strip().lower()
+            errors = {}
+            if not username:
+                errors["username"] = "Email is required."
+            elif not is_valid_email(username):
+                errors["username"] = "Enter a valid email address."
+            if errors:
+                self.json_response({"error": "Please correct the highlighted fields.", "fields": errors}, 422)
+                return
+            with connect() as db:
+                row = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+                if not row:
+                    self.json_response({"message": "If that email is registered, a temporary password has been sent."})
+                    return
+                temporary_password = secrets.token_urlsafe(9)
+                result = send_password_reset_email(username, temporary_password)
+                if not result["sent"]:
+                    self.json_response({"error": result["message"]}, 503)
+                    return
+                salt, password_hash = hash_password(temporary_password)
+                db.execute(
+                    "UPDATE users SET password_salt = ?, password_hash = ? WHERE id = ?",
+                    (salt, password_hash, row["id"]),
+                )
+                db.execute("DELETE FROM sessions WHERE user_id = ?", (row["id"],))
+            self.json_response({"message": "If that email is registered, a temporary password has been sent."})
             return
 
         if self.path == "/api/logout":
