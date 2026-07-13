@@ -177,8 +177,9 @@ def validate(payload, existing=None):
     values["name"] = str(payload.get("name", "")).strip()
     if not values["name"]:
         errors["name"] = "Product name is required."
-    for field in ("category", "location", "supplier", "description"):
+    for field in ("category", "location", "supplier"):
         values[field] = str(payload.get(field, existing.get(field, ""))).strip()
+    values["description"] = ""
     for field in ("quantity", "reorder_level"):
         try:
             values[field] = int(payload.get(field, 0))
