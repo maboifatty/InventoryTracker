@@ -2,7 +2,6 @@ const $ = (s) => document.querySelector(s);
 const body = $('#itemsBody'), empty = $('#emptyState'), form = $('#itemForm');
 const dialog = $('#itemDialog'), deleteDialog = $('#deleteDialog'), authForm = $('#authForm'), resetForm = $('#resetForm');
 const sevaDialog = $('#sevaDialog'), sevaForm = $('#sevaForm'), sevaItems = $('#sevaItems');
-const inventoryEditDialog = $('#inventoryEditDialog'), inventoryEditForm = $('#inventoryEditForm'), inventoryEditItems = $('#inventoryEditItems');
 const sevaLogDialog = $('#sevaLogDialog'), sevaLog = $('#sevaLog');
 const sevaEditDialog = $('#sevaEditDialog'), sevaEditForm = $('#sevaEditForm'), sevaEditList = $('#sevaEditList'), sevaEditPanel = $('#sevaEditPanel');
 let items = [], sevas = [], editingId = null, deletingId = null, editingSevaId = null, sevaPanelMode = 'none', timer, creatingUser = false;
@@ -104,22 +103,6 @@ function renderSevaItems() {
     <input name="item_${item.id}" data-item-id="${item.id}" type="number" min="0" max="${item.quantity}" step="1" value="0" aria-label="${esc(item.name)} quantity used">
     <small class="error" data-error-for="item_${item.id}"></small>
   </label>`).join('');
-}
-function openInventoryEditForm() {
-  clearErrors(inventoryEditForm);
-  renderInventoryEditItems();
-  inventoryEditDialog.showModal();
-}
-function renderInventoryEditItems() {
-  if (!items.length) {
-    inventoryEditItems.innerHTML = '<div class="seva-empty">No inventory items available. Add inventory items first.</div>';
-    return;
-  }
-  inventoryEditItems.innerHTML = items.map(item => `<div class="inventory-edit-row">
-    <div class="product"><strong>${esc(item.name)}</strong><small>${esc(item.sku)}</small></div>
-    <label><span>Stock</span><input name="quantity_${item.id}" data-edit-id="${item.id}" data-field="quantity" type="number" min="0" step="1" value="${item.quantity}"><small class="error" data-error-for="quantity_${item.id}"></small></label>
-    <label><span>Minimum</span><input name="reorder_${item.id}" data-edit-id="${item.id}" data-field="reorder_level" type="number" min="0" step="1" value="${item.reorder_level}"><small class="error" data-error-for="reorder_${item.id}"></small></label>
-  </div>`).join('');
 }
 async function openSevaLog() {
   sevaLog.innerHTML = '<div class="seva-empty">Loading sevas…</div>';
@@ -375,51 +358,29 @@ $('#deleteSeva').addEventListener('click', async () => {
   } catch { toast('Could not connect to the inventory service.'); }
   finally { button.disabled = !editingSevaId; button.textContent = 'Delete seva'; }
 });
-inventoryEditForm.addEventListener('submit', async e => {
-  e.preventDefault(); clearErrors(inventoryEditForm);
-  const updates = items.map(item => {
-    const quantity = inventoryEditForm.elements[`quantity_${item.id}`];
-    const reorder = inventoryEditForm.elements[`reorder_${item.id}`];
-    return {...item, quantity: Number(quantity?.value ?? item.quantity), reorder_level: Number(reorder?.value ?? item.reorder_level)};
-  });
-  const fieldErrors = {};
-  updates.forEach(item => {
-    if (!Number.isInteger(item.quantity) || item.quantity < 0) fieldErrors[`quantity_${item.id}`] = 'Use 0 or more.';
-    if (!Number.isInteger(item.reorder_level) || item.reorder_level < 0) fieldErrors[`reorder_${item.id}`] = 'Use 0 or more.';
-  });
-  if (Object.keys(fieldErrors).length) { showErrors(inventoryEditForm, fieldErrors); toast('Please correct the highlighted values.'); return; }
-  const button = $('#saveInventoryEdit'); button.disabled = true; button.textContent = 'Saving…';
-  try {
-    for (const item of updates) {
-      const original = items.find(current => current.id === item.id);
-      if (original.quantity === item.quantity && original.reorder_level === item.reorder_level) continue;
-      const res = await fetch(`/api/items/${item.id}`, apiOptions({method:'PUT', body:JSON.stringify(item)}));
-      const data = await res.json();
-      if(res.status === 401){ showLogin(); toast('Please log in.'); return; }
-      if(!res.ok){ toast(data.error || `Could not update ${item.name}.`); return; }
-      showNotificationResult(data.notification);
-    }
-    inventoryEditDialog.close(); toast('Inventory updated.'); loadItems();
-  } catch { toast('Could not connect to the inventory service.'); }
-  finally { button.disabled = false; button.textContent = 'Save inventory'; }
-});
 body.addEventListener('click', e => {
   const edit=e.target.dataset.edit, del=e.target.dataset.delete;
   if(edit) openForm(items.find(i=>i.id===Number(edit)));
-  if(del){ deletingId=Number(del); const item=items.find(i=>i.id===deletingId); $('#deleteName').textContent=item.name; deleteDialog.showModal(); }
+  if(del){
+    deletingId=Number(del);
+    const item=items.find(i=>i.id===deletingId);
+    if (!item) return;
+    if (item.quantity > 0) { toast(`Set ${item.name} quantity to 0 before deleting.`); return; }
+    $('#deleteName').textContent=item.name; deleteDialog.showModal();
+  }
 });
 $('#confirmDelete').addEventListener('click', async () => {
   const res=await fetch(`/api/items/${deletingId}`,apiOptions({method:'DELETE'}));
-  if(res.ok){deleteDialog.close();toast('Item deleted.');loadItems();} else toast('Could not delete item.');
+  const data=await res.json().catch(()=>({}));
+  if(res.ok){deleteDialog.close();toast('Item deleted.');loadItems();} else toast(data.error || 'Could not delete item.');
 });
 $('#togglePassword').onclick=()=>{ const input=authForm.password; const showing=input.type==='text'; input.type=showing?'password':'text'; $('#togglePassword').textContent=showing?'👁':'🙈'; input.focus(); };
 $('#switchAuth').onclick=()=>setAuthMode(!creatingUser);
 $('#backToLogin').onclick=()=>{ history.replaceState(null, '', '/'); showLogin(); };
 $('#logout').onclick=async()=>{ try{ await fetch('/api/logout', apiOptions({method:'POST'})); } finally { showLogin(); toast('Logged out.'); } };
-$('#addItem').onclick=()=>openForm(); $('#emptyAdd').onclick=()=>openForm(); $('#editInventory').onclick=()=>openInventoryEditForm(); $('#sevaMaster').onclick=()=>openSevaEdit(); $('#addSevaInMaster').onclick=()=>openAddSevaInMaster();
+$('#addItem').onclick=()=>openForm(); $('#emptyAdd').onclick=()=>openForm(); $('#sevaMaster').onclick=()=>openSevaEdit(); $('#addSevaInMaster').onclick=()=>openAddSevaInMaster();
 $('#closeDialog').onclick=()=>dialog.close(); $('#cancelDialog').onclick=()=>dialog.close();
 $('#closeSevaDialog').onclick=()=>sevaDialog.close(); $('#cancelSevaDialog').onclick=()=>sevaDialog.close();
-$('#closeInventoryEditDialog').onclick=()=>inventoryEditDialog.close(); $('#cancelInventoryEditDialog').onclick=()=>inventoryEditDialog.close();
 $('#closeSevaLogDialog').onclick=()=>sevaLogDialog.close(); $('#doneSevaLog').onclick=()=>sevaLogDialog.close();
 $('#closeSevaEditDialog').onclick=()=>sevaEditDialog.close(); $('#cancelSevaEditDialog').onclick=()=>sevaEditDialog.close();
 $('#cancelDelete').onclick=()=>deleteDialog.close();

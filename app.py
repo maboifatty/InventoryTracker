@@ -804,11 +804,15 @@ class InventoryHandler(SimpleHTTPRequestHandler):
             self.json_response({"error": "Please log in."}, 401)
             return
         with connect() as db:
-            cursor = db.execute("DELETE FROM inventory WHERE id = ?", (item_id,))
-        if cursor.rowcount == 0:
-            self.json_response({"error": "Item not found."}, 404)
-        else:
-            self.json_response({"message": "Item deleted."})
+            item = db.execute("SELECT id, quantity FROM inventory WHERE id = ?", (item_id,)).fetchone()
+            if item is None:
+                self.json_response({"error": "Item not found."}, 404)
+                return
+            if item["quantity"] > 0:
+                self.json_response({"error": "Set this item quantity to 0 before deleting it."}, 409)
+                return
+            db.execute("DELETE FROM inventory WHERE id = ?", (item_id,))
+        self.json_response({"message": "Item deleted."})
 
     def item_id(self):
         parts = urlparse(self.path).path.strip("/").split("/")

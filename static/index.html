@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Inventory Master</title>
-  <link rel="stylesheet" href="styles.css?v=20260713b">
+  <link rel="stylesheet" href="styles.css?v=20260713c">
 </head>
 <body>
   <section class="auth-screen" id="authScreen">
@@ -41,7 +41,7 @@
 
   <header class="topbar app-only" hidden>
     <div class="brand"><span class="brand-mark">IM</span><div><strong>Inventory Master</strong><small>Stock control, made simple</small></div></div>
-    <div class="top-actions"><span id="signedInUser"></span><button class="secondary" id="logout">Log out</button><button class="primary seva-action" id="sevaMaster">Seva Master</button><button class="primary inventory-action" id="editInventory">✎ Update Inventory</button><button class="primary inventory-action" id="addItem">＋ Inventory Master</button></div>
+    <div class="top-actions"><span id="signedInUser"></span><button class="secondary" id="logout">Log out</button><button class="primary seva-action" id="sevaMaster">Seva Master</button><button class="primary inventory-action" id="addItem">＋ Inventory Master</button></div>
   </header>
   <main id="appMain" class="app-only" hidden>
     <section class="welcome">
@@ -91,16 +91,6 @@
       <div class="dialog-actions"><button type="button" class="secondary" id="cancelSevaDialog">Cancel</button><button type="submit" class="primary" id="saveSeva">Submit seva</button></div>
     </form>
   </dialog>
-  <dialog id="inventoryEditDialog">
-    <form id="inventoryEditForm" novalidate>
-      <div class="dialog-head"><div><h2>Edit inventory</h2><p>Correct stock and minimum values for existing items.</p></div><button type="button" class="icon-btn" id="closeInventoryEditDialog" aria-label="Close">×</button></div>
-      <div class="inventory-edit-wrap">
-        <div class="inventory-edit-head"><span>Product</span><span>Stock</span><span>Minimum</span></div>
-        <div id="inventoryEditItems" class="inventory-edit-items"></div>
-      </div>
-      <div class="dialog-actions"><button type="button" class="secondary" id="cancelInventoryEditDialog">Cancel</button><button type="submit" class="primary" id="saveInventoryEdit">Save inventory</button></div>
-    </form>
-  </dialog>
   <dialog id="sevaLogDialog">
     <div class="dialog-head"><div><h2>Seva log</h2><p>Review past sevas, dates, and items used.</p></div><button type="button" class="icon-btn" id="closeSevaLogDialog" aria-label="Close">×</button></div>
     <div id="sevaLog" class="seva-log"></div>
@@ -118,8 +108,8 @@
       <div class="dialog-actions"><button type="button" class="danger" id="deleteSeva" disabled>Delete seva</button><button type="button" class="secondary" id="cancelSevaEditDialog">Cancel</button><button type="submit" class="primary seva-action" id="saveSevaEdit" disabled>Save seva</button></div>
     </form>
   </dialog>
-  <dialog id="deleteDialog" class="confirm-dialog"><div class="danger-icon">!</div><h2>Delete this item?</h2><p>This removes <strong id="deleteName"></strong> from your inventory. This action cannot be undone.</p><div class="dialog-actions"><button class="secondary" id="cancelDelete">Cancel</button><button class="danger" id="confirmDelete">Delete item</button></div></dialog>
+  <dialog id="deleteDialog" class="confirm-dialog"><div class="danger-icon">!</div><h2>Delete this item?</h2><p>This removes <strong id="deleteName"></strong> from your inventory. Items can only be deleted when their quantity is 0.</p><div class="dialog-actions"><button class="secondary" id="cancelDelete">Cancel</button><button class="danger" id="confirmDelete">Delete item</button></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=20260713b"></script>
+  <script src="app.js?v=20260713c"></script>
 </body>
 </html>
