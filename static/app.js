@@ -174,6 +174,7 @@ function openSelectedSeva(sevaId) {
 function renderSevaDetailPanel(seva, mode) {
   const oldById = Object.fromEntries((seva.items || []).map(item => [item.id, item.quantity_used]));
   const selectedItems = items.filter(item => oldById[item.id]);
+  const historicalItems = (seva.items || []).filter(item => !item.id || !items.some(current => current.id === item.id));
   sevaEditPanel.innerHTML = `<div class="form-grid seva-edit-fields">
     <label>Seva Name <span>*</span><select name="name" required>${['Oakland','Santa Clara','Fremont'].map(name => `<option value="${name}" ${seva.name === name ? 'selected' : ''}>${name}</option>`).join('')}</select><small class="error"></small></label>
     <label>Seva Date <span>*</span><input name="seva_date" type="date" required value="${esc(seva.seva_date)}"><small class="error"></small></label>
@@ -181,9 +182,15 @@ function renderSevaDetailPanel(seva, mode) {
     <div class="full seva-items-field">
       <div class="seva-items-head"><strong>Inventory items used</strong><small>Select an inventory item, then enter the quantity used.</small></div>
       <label class="inventory-picker">Add inventory item<select id="sevaInventoryPicker"><option value="">Choose an item…</option>${items.map(item => `<option value="${item.id}">${esc(item.name)} (${number.format(item.quantity)} in inventory)</option>`).join('')}</select></label>
-      <div class="seva-items selected-seva-items">${selectedItems.map(item => sevaItemRow(item, oldById[item.id], item.quantity + oldById[item.id])).join('')}</div>
+      <div class="seva-items selected-seva-items">${historicalItems.map(historicalSevaItemRow).join('')}${selectedItems.map(item => sevaItemRow(item, oldById[item.id], item.quantity + oldById[item.id])).join('')}</div>
       <small class="error" data-error-for="items"></small>
     </div>
+  </div>`;
+}
+function historicalSevaItemRow(item) {
+  return `<div class="seva-item historical-seva-item">
+    <span><strong>${esc(item.name)}</strong><small>Deleted from inventory master</small></span>
+    <strong>${number.format(item.quantity_used)} used</strong>
   </div>`;
 }
 function sevaItemRow(item, quantity=0, available=item.quantity) {
