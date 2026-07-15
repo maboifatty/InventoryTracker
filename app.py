@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "inventory.db"
 RESTOCK_EMAIL_TO = "communitysevainventory@gmail.com"
 SEVA_NAMES = {"Oakland", "Santa Clara", "Fremont"}
+INVENTORY_UNITS = {"crates", "cases", "bottles", "cans"}
 
 
 def load_dotenv(path=ROOT / ".env"):
@@ -53,6 +54,7 @@ def initialize_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sku TEXT NOT NULL UNIQUE COLLATE NOCASE,
                 name TEXT NOT NULL,
+                unit TEXT NOT NULL DEFAULT 'crates',
                 category TEXT NOT NULL DEFAULT '',
                 quantity INTEGER NOT NULL DEFAULT 0 CHECK(quantity >= 0),
                 unit_price REAL NOT NULL DEFAULT 0 CHECK(unit_price >= 0),
@@ -64,6 +66,12 @@ def initialize_database():
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        columns = {
+            row["name"]
+            for row in db.execute("PRAGMA table_info(inventory)")
+        }
+        if "unit" not in columns:
+            db.execute("ALTER TABLE inventory ADD COLUMN unit TEXT NOT NULL DEFAULT 'crates'")
         db.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -227,6 +235,9 @@ def validate(payload, existing=None):
     values["name"] = str(payload.get("name", "")).strip()
     if not values["name"]:
         errors["name"] = "Product name is required."
+    values["unit"] = str(payload.get("unit", existing.get("unit", ""))).strip().lower()
+    if values["unit"] not in INVENTORY_UNITS:
+        errors["unit"] = "Choose crates, cases, bottles, or cans."
     for field in ("category", "location", "supplier"):
         values[field] = str(payload.get(field, existing.get(field, ""))).strip()
     values["description"] = ""

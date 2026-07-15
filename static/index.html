@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Inventory Master</title>
-  <link rel="stylesheet" href="styles.css?v=20260713c">
+  <link rel="stylesheet" href="styles.css?v=20260715a">
 </head>
 <body>
   <section class="auth-screen" id="authScreen">
@@ -69,6 +69,7 @@
       <div class="dialog-head"><div><h2 id="dialogTitle">Add inventory item</h2><p>Enter the product and stock details below.</p></div><button type="button" class="icon-btn" id="closeDialog" aria-label="Close">×</button></div>
       <div class="form-grid">
         <label>Product name <span>*</span><input name="name" maxlength="120" required placeholder="e.g. Wireless headphones"><small class="error"></small></label>
+        <label>Unit <span>*</span><select name="unit" required><option value="">Choose unit…</option><option value="crates">Crates</option><option value="cases">Cases</option><option value="bottles">Bottles</option><option value="cans">Cans</option></select><small class="error"></small></label>
         <label>Quantity<input name="quantity" type="number" min="0" step="1" value="0"><small class="error"></small></label>
         <label>Reorder level<input name="reorder_level" type="number" min="0" step="1" value="0"><small class="error"></small></label>
       </div>
@@ -109,6 +110,6 @@
   </dialog>
   <dialog id="deleteDialog" class="confirm-dialog"><div class="danger-icon">!</div><h2>Delete this item?</h2><p>This removes <strong id="deleteName"></strong> from your inventory. Items can only be deleted when their quantity is 0.</p><div class="dialog-actions"><button class="secondary" id="cancelDelete">Cancel</button><button class="danger" id="confirmDelete">Delete item</button></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=20260713c"></script>
+  <script src="app.js?v=20260715a"></script>
 </body>
 </html>

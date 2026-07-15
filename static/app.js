@@ -58,7 +58,7 @@ function render(stats) {
   $('#resultCount').textContent = `${items.length} product${items.length === 1 ? '' : 's'}`;
   body.innerHTML = items.map(item => { const status=stockStatus(item); return `<tr>
     <td><div class="product"><strong>${esc(item.name)}</strong><small>${esc(item.sku)}</small></div></td>
-    <td><span class="qty">${number.format(item.quantity)}</span></td>
+    <td><span class="qty">${number.format(item.quantity)}</span> ${esc(item.unit || '')}</td>
     <td><span class="badge ${status[1]}">${status[0]}</span></td>
     <td class="row-actions"><button class="action-btn" data-edit="${item.id}" title="Edit item">Edit</button><button class="action-btn" data-delete="${item.id}" title="Delete item">Delete</button></td></tr>`; }).join('');
   empty.hidden = items.length !== 0; body.closest('table').hidden = items.length === 0;
@@ -84,7 +84,7 @@ function openForm(item=null) {
   $('#dialogTitle').textContent = item ? 'Edit inventory item' : 'Add inventory item';
   $('#saveItem').textContent = item ? 'Save changes' : 'Save item';
   if (item) Object.keys(item).forEach(k => { if (form.elements[k]) form.elements[k].value = item[k]; });
-  else { form.quantity.value=0; form.reorder_level.value=0; }
+  else { form.quantity.value=0; form.reorder_level.value=0; form.unit.value='crates'; }
   dialog.showModal(); setTimeout(() => form.name.focus(), 30);
 }
 function openSevaForm() {

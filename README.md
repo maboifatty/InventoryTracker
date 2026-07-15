@@ -23,7 +23,7 @@ Open <http://127.0.0.1:8000> in a browser. Stop the server with `Ctrl+C`.
 - Login page with email-based user IDs, create-user option, and forgot-password reset link
 - Password visibility toggle
 - User credentials stored locally in SQLite with password hashing
-- Create, edit, search, filter, and delete inventory master records
+- Create, edit, search, filter, and delete inventory master records with required units
 - Bulk-correct inventory stock and minimum threshold values
 - Record sevas and subtract used quantities from inventory stock
 - View a read-only log of past sevas, dates, and items used
