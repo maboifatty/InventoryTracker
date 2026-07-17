@@ -521,21 +521,31 @@ def pdf_rule(x1, y1, x2, y2):
     return f"{x1} {y1} m {x2} {y2} l S"
 
 
+def pdf_rect(x, y, width, height, fill=False):
+    return f"{x} {y} {width} {height} re {'f' if fill else 'S'}"
+
+
 def build_seva_pdf(seva, items):
     pages = []
     commands = ["q", "1 1 1 RG", "0 0 0 rg", "0.7 w"]
     y = 742
     left, right = 72, 540
     row_h = 22
+    table_width = right - left
     col_name, col_qty, col_unit = 82, 340, 430
+    col_1, col_2 = 330, 420
 
     def add_table_header(title="Items Used"):
         nonlocal y, commands
         commands.append(pdf_line(title, 72, y, 14, True))
         y -= 22
         commands.extend([
-            pdf_rule(left, y + 8, right, y + 8),
-            pdf_rule(left, y - row_h + 8, right, y - row_h + 8),
+            "0.95 0.97 1 rg",
+            pdf_rect(left, y - row_h + 8, table_width, row_h, True),
+            "0 0 0 rg",
+            pdf_rect(left, y - row_h + 8, table_width, row_h),
+            pdf_rule(col_1, y + 8, col_1, y - row_h + 8),
+            pdf_rule(col_2, y + 8, col_2, y - row_h + 8),
             pdf_line("Name", col_name, y - 7, 11, True),
             pdf_line("Quantity", col_qty, y - 7, 11, True),
             pdf_line("Units", col_unit, y - 7, 11, True),
@@ -568,7 +578,11 @@ def build_seva_pdf(seva, items):
     add_table_header()
     if not items:
         commands.append(pdf_line("No items recorded.", col_name, y - 7, 11))
-        commands.append(pdf_rule(left, y - row_h + 8, right, y - row_h + 8))
+        commands.extend([
+            pdf_rect(left, y - row_h + 8, table_width, row_h),
+            pdf_rule(col_1, y + 8, col_1, y - row_h + 8),
+            pdf_rule(col_2, y + 8, col_2, y - row_h + 8),
+        ])
     else:
         for item in items:
             if y < 80:
@@ -576,10 +590,12 @@ def build_seva_pdf(seva, items):
                 start_page()
                 add_table_header("Items Used (continued)")
             commands.extend([
+                pdf_rect(left, y - row_h + 8, table_width, row_h),
+                pdf_rule(col_1, y + 8, col_1, y - row_h + 8),
+                pdf_rule(col_2, y + 8, col_2, y - row_h + 8),
                 pdf_line(item["name"], col_name, y - 7, 10),
                 pdf_line(item["quantity_used"], col_qty, y - 7, 10),
                 pdf_line(item.get("unit", ""), col_unit, y - 7, 10),
-                pdf_rule(left, y - row_h + 8, right, y - row_h + 8),
             ])
             y -= row_h
     finish_page()

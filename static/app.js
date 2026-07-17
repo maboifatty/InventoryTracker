@@ -139,7 +139,7 @@ async function openSevaEdit() {
   editingSevaId = null; sevaPanelMode = 'none'; clearErrors(sevaEditForm);
   sevaEditList.innerHTML = '<div class="seva-empty">Loading sevas…</div>';
   sevaEditPanel.innerHTML = '<div class="seva-empty">Select a seva to edit, or add a new seva.</div>';
-  $('#saveSevaEdit').disabled = true; $('#deleteSeva').disabled = true;
+  $('#saveSevaEdit').disabled = true; $('#deleteSeva').disabled = true; $('#printSevaDetails').disabled = true;
   sevaEditDialog.showModal();
   try {
     await loadItems();
@@ -162,14 +162,14 @@ function renderSevaEditList() {
 function openAddSevaInMaster() {
   editingSevaId = null; sevaPanelMode = 'add'; clearErrors(sevaEditForm); renderSevaEditList();
   renderSevaDetailPanel({name:'Oakland', location:'', seva_type:'lunch', volunteers: 1, seva_date: todayValue(), items: []}, 'add');
-  $('#saveSevaEdit').disabled = false; $('#deleteSeva').disabled = true;
+  $('#saveSevaEdit').disabled = false; $('#deleteSeva').disabled = true; $('#printSevaDetails').disabled = true;
 }
 function openSelectedSeva(sevaId) {
   editingSevaId = sevaId; sevaPanelMode = 'edit'; clearErrors(sevaEditForm); renderSevaEditList();
   const seva = sevas.find(entry => entry.id === sevaId);
   if (!seva) return;
   renderSevaDetailPanel(seva, 'edit');
-  $('#saveSevaEdit').disabled = false; $('#deleteSeva').disabled = false;
+  $('#saveSevaEdit').disabled = false; $('#deleteSeva').disabled = false; $('#printSevaDetails').disabled = false;
 }
 function renderSevaDetailPanel(seva, mode) {
   const oldById = Object.fromEntries((seva.items || []).map(item => [item.id, item.quantity_used]));
@@ -186,7 +186,6 @@ function renderSevaDetailPanel(seva, mode) {
       <div class="seva-items selected-seva-items">${historicalItems.map(historicalSevaItemRow).join('')}${selectedItems.map(item => sevaItemRow(item, oldById[item.id], item.quantity + oldById[item.id])).join('')}</div>
       <small class="error" data-error-for="items"></small>
     </div>
-    ${mode === 'edit' ? '<div class="full seva-panel-actions"><button type="button" class="primary seva-action" id="printSevaDetails">Print seva details</button></div>' : ''}
   </div>`;
 }
 function historicalSevaItemRow(item) {
@@ -339,8 +338,8 @@ sevaEditPanel.addEventListener('change', e => {
 sevaEditPanel.addEventListener('click', e => {
   const remove = e.target.closest('[data-remove-seva-item]');
   if (remove) remove.closest('[data-selected-seva-item]')?.remove();
-  if (e.target.id === 'printSevaDetails' && editingSevaId) printSevaDetails(editingSevaId);
 });
+$('#printSevaDetails').addEventListener('click', () => { if (editingSevaId) printSevaDetails(editingSevaId); });
 async function printSevaDetails(sevaId) {
   try {
     const res = await fetch(`/api/sevas/${sevaId}/pdf`, apiOptions());
@@ -378,7 +377,7 @@ $('#deleteSeva').addEventListener('click', async () => {
     if(res.status === 401){ showLogin(); return; }
     if(!res.ok){ toast(data.error || 'Could not delete seva.'); return; }
     editingSevaId = null; sevaPanelMode = 'none'; showNotificationResult(data.notification); toast('Seva deleted. Inventory restored.'); await loadItems(); await loadSevas(); renderSevaEditList();
-    sevaEditPanel.innerHTML = '<div class="seva-empty">Select a seva to edit, or add a new seva.</div>'; $('#saveSevaEdit').disabled = true;
+    sevaEditPanel.innerHTML = '<div class="seva-empty">Select a seva to edit, or add a new seva.</div>'; $('#saveSevaEdit').disabled = true; $('#deleteSeva').disabled = true; $('#printSevaDetails').disabled = true;
   } catch { toast('Could not connect to the inventory service.'); }
   finally { button.disabled = !editingSevaId; button.textContent = 'Delete seva'; }
 });
