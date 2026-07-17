@@ -123,7 +123,7 @@ function renderSevaLog(sevas) {
     return;
   }
   sevaLog.innerHTML = sevas.map(seva => `<article class="seva-log-entry">
-    <div class="seva-log-head"><div><strong>${esc(formatDate(seva.seva_date))} · ${esc(formatSevaType(seva.seva_type))}</strong><small>${esc(seva.name)} · ${number.format(seva.volunteers || 1)} volunteer${Number(seva.volunteers || 1) === 1 ? '' : 's'}${seva.location ? ` · ${esc(seva.location)}` : ''}</small></div><span>${number.format(seva.items.length)} item${seva.items.length === 1 ? '' : 's'}</span></div>
+    <div class="seva-log-head"><div><strong>${esc(formatDate(seva.seva_date))} · ${esc(formatSevaType(seva.seva_type))}</strong><small>${esc(seva.name)} · ${number.format(seva.volunteers || 1)} people served${seva.location ? ` · ${esc(seva.location)}` : ''}</small></div><span>${number.format(seva.items.length)} item${seva.items.length === 1 ? '' : 's'}</span></div>
     <ul>${seva.items.map(item => `<li><span>${esc(item.name)}</span><strong>${number.format(item.quantity_used)}</strong></li>`).join('')}</ul>
   </article>`).join('');
 }
@@ -179,7 +179,7 @@ function renderSevaDetailPanel(seva, mode) {
     <label>Seva Name <span>*</span><select name="name" required>${['Oakland','Santa Clara','Fremont'].map(name => `<option value="${name}" ${seva.name === name ? 'selected' : ''}>${name}</option>`).join('')}</select><small class="error"></small></label>
     <label>Seva Date <span>*</span><input name="seva_date" type="date" required value="${esc(seva.seva_date)}"><small class="error"></small></label>
     <label>Type <span>*</span><select name="seva_type" required><option value="breakfast" ${seva.seva_type === 'breakfast' ? 'selected' : ''}>Breakfast</option><option value="lunch" ${seva.seva_type === 'lunch' || !seva.seva_type ? 'selected' : ''}>Lunch</option></select><small class="error"></small></label>
-    <label>Number of volunteers <span>*</span><input name="volunteers" type="number" min="1" step="1" required value="${Number(seva.volunteers || 1)}"><small class="error"></small></label>
+    <label>Number of people served <span>*</span><input name="volunteers" type="number" min="1" step="1" required value="${Number(seva.volunteers || 1)}"><small class="error"></small></label>
     <div class="full seva-items-field">
       <div class="seva-items-head"><strong>Inventory items used</strong><small>Select an inventory item, then enter the quantity used.</small></div>
       <label class="inventory-picker">Add inventory item<select id="sevaInventoryPicker"><option value="">Choose an item…</option>${items.map(item => `<option value="${item.id}">${esc(item.name)} (${number.format(item.quantity)} in inventory)</option>`).join('')}</select></label>
