@@ -126,6 +126,7 @@ def initialize_database():
                 seva_id INTEGER NOT NULL,
                 inventory_id INTEGER,
                 item_name TEXT NOT NULL DEFAULT '',
+                item_unit TEXT NOT NULL DEFAULT '',
                 quantity_used INTEGER NOT NULL CHECK(quantity_used > 0),
                 FOREIGN KEY(seva_id) REFERENCES sevas(id) ON DELETE CASCADE,
                 FOREIGN KEY(inventory_id) REFERENCES inventory(id) ON DELETE SET NULL
@@ -153,6 +154,7 @@ def migrate_seva_items_history(db):
     ]
     needs_migration = (
         "item_name" not in columns
+        or "item_unit" not in columns
         or any(row.get("on_delete", "").upper() != "SET NULL" for row in inventory_fk)
     )
     if not needs_migration:
@@ -161,24 +163,28 @@ def migrate_seva_items_history(db):
     db.commit()
     db.execute("PRAGMA foreign_keys = OFF")
     has_item_name = "item_name" in columns
+    has_item_unit = "item_unit" in columns
     db.execute("""
         CREATE TABLE seva_items_new (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             seva_id INTEGER NOT NULL,
             inventory_id INTEGER,
             item_name TEXT NOT NULL DEFAULT '',
+            item_unit TEXT NOT NULL DEFAULT '',
             quantity_used INTEGER NOT NULL CHECK(quantity_used > 0),
             FOREIGN KEY(seva_id) REFERENCES sevas(id) ON DELETE CASCADE,
             FOREIGN KEY(inventory_id) REFERENCES inventory(id) ON DELETE SET NULL
         )
     """)
     item_name_expr = "NULLIF(seva_items.item_name, '')" if has_item_name else "NULL"
+    item_unit_expr = "NULLIF(seva_items.item_unit, '')" if has_item_unit else "NULL"
     db.execute(f"""
-        INSERT INTO seva_items_new (id, seva_id, inventory_id, item_name, quantity_used)
+        INSERT INTO seva_items_new (id, seva_id, inventory_id, item_name, item_unit, quantity_used)
         SELECT seva_items.id,
                seva_items.seva_id,
                seva_items.inventory_id,
                COALESCE({item_name_expr}, inventory.name, 'Deleted item'),
+               COALESCE({item_unit_expr}, inventory.unit, ''),
                seva_items.quantity_used
         FROM seva_items
         LEFT JOIN inventory ON inventory.id = seva_items.inventory_id
@@ -460,9 +466,9 @@ def apply_seva_items(db, seva_id, new_items, old_items=None):
     old_items = old_items or {}
     new_by_id = {item["id"]: item["quantity"] for item in new_items}
     item_names = {
-        row["id"]: row["name"]
+        row["id"]: {"name": row["name"], "unit": row["unit"]}
         for row in db.execute(
-            "SELECT id, name FROM inventory WHERE id IN ({})".format(",".join("?" for _ in new_by_id)),
+            "SELECT id, name, unit FROM inventory WHERE id IN ({})".format(",".join("?" for _ in new_by_id)),
             list(new_by_id),
         )
     } if new_by_id else {}
@@ -475,9 +481,141 @@ def apply_seva_items(db, seva_id, new_items, old_items=None):
         )
     db.execute("DELETE FROM seva_items WHERE seva_id = ? AND inventory_id IS NOT NULL", (seva_id,))
     db.executemany(
-        "INSERT INTO seva_items (seva_id, inventory_id, item_name, quantity_used) VALUES (?, ?, ?, ?)",
-        [(seva_id, item["id"], item_names.get(item["id"], "Deleted item"), item["quantity"]) for item in new_items],
+        "INSERT INTO seva_items (seva_id, inventory_id, item_name, item_unit, quantity_used) VALUES (?, ?, ?, ?, ?)",
+        [
+            (
+                seva_id,
+                item["id"],
+                item_names.get(item["id"], {}).get("name", "Deleted item"),
+                item_names.get(item["id"], {}).get("unit", ""),
+                item["quantity"],
+            )
+            for item in new_items
+        ],
     )
+
+
+def seva_items_for_response(db, seva_id):
+    return [dict(row) for row in db.execute("""
+        SELECT seva_items.inventory_id AS id,
+               COALESCE(NULLIF(seva_items.item_name, ''), inventory.name, 'Deleted item') AS name,
+               COALESCE(NULLIF(seva_items.item_unit, ''), inventory.unit, '') AS unit,
+               seva_items.quantity_used
+        FROM seva_items
+        LEFT JOIN inventory ON inventory.id = seva_items.inventory_id
+        WHERE seva_items.seva_id = ?
+        ORDER BY name COLLATE NOCASE
+    """, (seva_id,))]
+
+
+def pdf_text(value):
+    return str(value).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def pdf_line(content, x, y, size=11, bold=False):
+    font = "F2" if bold else "F1"
+    return f"BT /{font} {size} Tf {x} {y} Td ({pdf_text(content)}) Tj ET"
+
+
+def pdf_rule(x1, y1, x2, y2):
+    return f"{x1} {y1} m {x2} {y2} l S"
+
+
+def build_seva_pdf(seva, items):
+    pages = []
+    commands = ["q", "1 1 1 RG", "0 0 0 rg", "0.7 w"]
+    y = 742
+    left, right = 72, 540
+    row_h = 22
+    col_name, col_qty, col_unit = 82, 340, 430
+
+    def add_table_header(title="Items Used"):
+        nonlocal y, commands
+        commands.append(pdf_line(title, 72, y, 14, True))
+        y -= 22
+        commands.extend([
+            pdf_rule(left, y + 8, right, y + 8),
+            pdf_rule(left, y - row_h + 8, right, y - row_h + 8),
+            pdf_line("Name", col_name, y - 7, 11, True),
+            pdf_line("Quantity", col_qty, y - 7, 11, True),
+            pdf_line("Units", col_unit, y - 7, 11, True),
+        ])
+        y -= row_h
+
+    def finish_page():
+        nonlocal commands
+        commands.append("Q")
+        pages.append(commands)
+
+    def start_page():
+        nonlocal commands, y
+        commands = ["q", "1 1 1 RG", "0 0 0 rg", "0.7 w"]
+        y = 742
+
+    commands.append(pdf_line("Seva Details", 72, y, 20, True))
+    y -= 38
+    detail_rows = [
+        ("Seva name", seva["name"]),
+        ("Date", seva["seva_date"]),
+        ("Type", seva["seva_type"].capitalize() if seva["seva_type"] else ""),
+        ("Number of people served", seva["volunteers"]),
+    ]
+    for label, value in detail_rows:
+        commands.append(pdf_line(f"{label}: {value}", 72, y, 12))
+        y -= 20
+
+    y -= 14
+    add_table_header()
+    if not items:
+        commands.append(pdf_line("No items recorded.", col_name, y - 7, 11))
+        commands.append(pdf_rule(left, y - row_h + 8, right, y - row_h + 8))
+    else:
+        for item in items:
+            if y < 80:
+                finish_page()
+                start_page()
+                add_table_header("Items Used (continued)")
+            commands.extend([
+                pdf_line(item["name"], col_name, y - 7, 10),
+                pdf_line(item["quantity_used"], col_qty, y - 7, 10),
+                pdf_line(item.get("unit", ""), col_unit, y - 7, 10),
+                pdf_rule(left, y - row_h + 8, right, y - row_h + 8),
+            ])
+            y -= row_h
+    finish_page()
+
+    page_count = len(pages)
+    page_ids = [3 + i for i in range(page_count)]
+    font_regular_id = 3 + page_count
+    font_bold_id = font_regular_id + 1
+    content_start_id = font_bold_id + 1
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        f"<< /Type /Pages /Kids [{' '.join(f'{page_id} 0 R' for page_id in page_ids)}] /Count {page_count} >>".encode("ascii"),
+    ]
+    for index, page_id in enumerate(page_ids):
+        content_id = content_start_id + index
+        objects.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 {font_regular_id} 0 R /F2 {font_bold_id} 0 R >> >> /Contents {content_id} 0 R >>".encode("ascii")
+        )
+    objects.extend([
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
+    ])
+    for page_commands in pages:
+        stream = "\n".join(page_commands).encode("utf-8")
+        objects.append(b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream")
+    pdf = [b"%PDF-1.4\n"]
+    offsets = [0]
+    for index, obj in enumerate(objects, 1):
+        offsets.append(sum(len(part) for part in pdf))
+        pdf.append(f"{index} 0 obj\n".encode("ascii") + obj + b"\nendobj\n")
+    xref = sum(len(part) for part in pdf)
+    pdf.append(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode("ascii"))
+    for offset in offsets[1:]:
+        pdf.append(f"{offset:010d} 00000 n \n".encode("ascii"))
+    pdf.append(f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("ascii"))
+    return b"".join(pdf)
 
 
 class InventoryHandler(SimpleHTTPRequestHandler):
@@ -491,6 +629,14 @@ class InventoryHandler(SimpleHTTPRequestHandler):
         body = json.dumps(data).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def pdf_response(self, body, filename):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -528,6 +674,23 @@ class InventoryHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/reset-password":
             self.path = "/index.html"
             super().do_GET()
+            return
+        pdf_seva_id = self.pdf_seva_id()
+        if pdf_seva_id is not None:
+            if self.current_user() is None:
+                self.json_response({"error": "Please log in."}, 401)
+                return
+            with connect() as db:
+                seva = db.execute(
+                    "SELECT id, name, location, seva_type, volunteers, seva_date, created_at FROM sevas WHERE id = ?",
+                    (pdf_seva_id,),
+                ).fetchone()
+                if seva is None:
+                    self.json_response({"error": "Seva not found."}, 404)
+                    return
+                items = seva_items_for_response(db, pdf_seva_id)
+            filename = f"seva-{pdf_seva_id}-{seva['seva_date']}.pdf"
+            self.pdf_response(build_seva_pdf(dict(seva), items), filename)
             return
         if parsed.path == "/api/items":
             if self.current_user() is None:
@@ -576,15 +739,7 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                     ORDER BY seva_date DESC, created_at DESC, id DESC
                 """)]
                 for seva in sevas:
-                    seva["items"] = [dict(row) for row in db.execute("""
-                        SELECT seva_items.inventory_id AS id,
-                               COALESCE(NULLIF(seva_items.item_name, ''), inventory.name, 'Deleted item') AS name,
-                               seva_items.quantity_used
-                        FROM seva_items
-                        LEFT JOIN inventory ON inventory.id = seva_items.inventory_id
-                        WHERE seva_items.seva_id = ?
-                        ORDER BY name COLLATE NOCASE
-                    """, (seva["id"],))]
+                    seva["items"] = seva_items_for_response(db, seva["id"])
             self.json_response({"sevas": sevas})
             return
         if parsed.path.startswith("/api/"):
@@ -905,6 +1060,15 @@ class InventoryHandler(SimpleHTTPRequestHandler):
     def seva_id(self):
         parts = urlparse(self.path).path.strip("/").split("/")
         if len(parts) == 3 and parts[:2] == ["api", "sevas"]:
+            try:
+                return int(parts[2])
+            except ValueError:
+                pass
+        return None
+
+    def pdf_seva_id(self):
+        parts = urlparse(self.path).path.strip("/").split("/")
+        if len(parts) == 4 and parts[:2] == ["api", "sevas"] and parts[3] == "pdf":
             try:
                 return int(parts[2])
             except ValueError:

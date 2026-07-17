@@ -186,6 +186,7 @@ function renderSevaDetailPanel(seva, mode) {
       <div class="seva-items selected-seva-items">${historicalItems.map(historicalSevaItemRow).join('')}${selectedItems.map(item => sevaItemRow(item, oldById[item.id], item.quantity + oldById[item.id])).join('')}</div>
       <small class="error" data-error-for="items"></small>
     </div>
+    ${mode === 'edit' ? '<div class="full seva-panel-actions"><button type="button" class="primary seva-action" id="printSevaDetails">Print seva details</button></div>' : ''}
   </div>`;
 }
 function historicalSevaItemRow(item) {
@@ -338,7 +339,21 @@ sevaEditPanel.addEventListener('change', e => {
 sevaEditPanel.addEventListener('click', e => {
   const remove = e.target.closest('[data-remove-seva-item]');
   if (remove) remove.closest('[data-selected-seva-item]')?.remove();
+  if (e.target.id === 'printSevaDetails' && editingSevaId) printSevaDetails(editingSevaId);
 });
+async function printSevaDetails(sevaId) {
+  try {
+    const res = await fetch(`/api/sevas/${sevaId}/pdf`, apiOptions());
+    if(res.status === 401){ showLogin(); return; }
+    if(!res.ok){ const data = await res.json().catch(()=>({})); toast(data.error || 'Could not create seva PDF.'); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = `seva-${sevaId}.pdf`; document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+    toast('Seva PDF generated.');
+  } catch { toast('Could not connect to the inventory service.'); }
+}
 sevaEditForm.addEventListener('submit', async e => {
   e.preventDefault(); if (sevaPanelMode === 'none') return; clearErrors(sevaEditForm);
   const payload = sevaPayloadFrom(sevaEditForm, '[data-edit-seva-item-id]');
