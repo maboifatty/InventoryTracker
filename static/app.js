@@ -182,7 +182,7 @@ function renderSevaDetailPanel(seva, mode) {
     <label>Number of people served <span>*</span><input name="volunteers" type="number" min="1" step="1" required value="${Number(seva.volunteers || 1)}"><small class="error"></small></label>
     <div class="full seva-items-field">
       <div class="seva-items-head"><strong>Inventory items used</strong><small>Select an inventory item, then enter the quantity used.</small></div>
-      <label class="inventory-picker">Add inventory item<select id="sevaInventoryPicker"><option value="">Choose an item…</option>${items.map(item => `<option value="${item.id}">${esc(item.name)} (${number.format(item.quantity)} in inventory)</option>`).join('')}</select></label>
+      <label class="inventory-picker"><select id="sevaInventoryPicker"><option value="">Add inventory item</option>${items.map(item => `<option value="${item.id}">${esc(item.name)} (${number.format(item.quantity)} in inventory)</option>`).join('')}</select></label>
       <div class="seva-items selected-seva-items">${historicalItems.map(historicalSevaItemRow).join('')}${selectedItems.map(item => sevaItemRow(item, oldById[item.id], item.quantity + oldById[item.id])).join('')}</div>
       <small class="error" data-error-for="items"></small>
     </div>
