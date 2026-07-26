@@ -106,6 +106,7 @@ def initialize_database():
                 location TEXT NOT NULL DEFAULT '',
                 seva_type TEXT NOT NULL DEFAULT '',
                 volunteers INTEGER NOT NULL DEFAULT 1 CHECK(volunteers > 0),
+                preparation_instructions TEXT NOT NULL DEFAULT '',
                 seva_date TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
@@ -120,6 +121,8 @@ def initialize_database():
             db.execute("ALTER TABLE sevas ADD COLUMN seva_type TEXT NOT NULL DEFAULT ''")
         if "volunteers" not in columns:
             db.execute("ALTER TABLE sevas ADD COLUMN volunteers INTEGER NOT NULL DEFAULT 1")
+        if "preparation_instructions" not in columns:
+            db.execute("ALTER TABLE sevas ADD COLUMN preparation_instructions TEXT NOT NULL DEFAULT ''")
         db.execute("""
             CREATE TABLE IF NOT EXISTS seva_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -271,6 +274,7 @@ def validate_seva(payload):
     name = str(payload.get("name", "")).strip()
     location = str(payload.get("location", "")).strip()
     seva_type = str(payload.get("seva_type", "")).strip().lower()
+    preparation_instructions = str(payload.get("preparation_instructions", "")).strip()
     seva_date = str(payload.get("seva_date", "")).strip()
     raw_items = payload.get("items", [])
     items = []
@@ -303,7 +307,15 @@ def validate_seva(payload):
             items.append({"id": item_id, "quantity": quantity})
     if "items" not in errors and not items:
         errors["items"] = "Enter a quantity for at least one item."
-    return {"name": name, "location": location, "seva_type": seva_type, "volunteers": volunteers, "seva_date": seva_date, "items": items}, errors
+    return {
+        "name": name,
+        "location": location,
+        "seva_type": seva_type,
+        "volunteers": volunteers,
+        "preparation_instructions": preparation_instructions,
+        "seva_date": seva_date,
+        "items": items,
+    }, errors
 
 
 def low_stock_items(db):
@@ -525,6 +537,27 @@ def pdf_rect(x, y, width, height, fill=False):
     return f"{x} {y} {width} {height} re {'f' if fill else 'S'}"
 
 
+def wrap_pdf_text(value, max_chars=86):
+    text = str(value or "").strip()
+    if not text:
+        return []
+    lines = []
+    for paragraph in text.splitlines():
+        words = paragraph.split()
+        if not words:
+            lines.append("")
+            continue
+        line = words[0]
+        for word in words[1:]:
+            if len(line) + len(word) + 1 <= max_chars:
+                line += f" {word}"
+            else:
+                lines.append(line)
+                line = word
+        lines.append(line)
+    return lines
+
+
 def build_seva_pdf(seva, items):
     pages = []
     commands = ["q", "1 1 1 RG", "0 0 0 rg", "0.7 w"]
@@ -573,6 +606,20 @@ def build_seva_pdf(seva, items):
     for label, value in detail_rows:
         commands.append(pdf_line(f"{label}: {value}", 72, y, 12))
         y -= 20
+
+    instructions = wrap_pdf_text(seva.get("preparation_instructions", ""))
+    if instructions:
+        y -= 8
+        commands.append(pdf_line("Preparation Instructions", 72, y, 14, True))
+        y -= 22
+        for line in instructions:
+            if y < 90:
+                finish_page()
+                start_page()
+                commands.append(pdf_line("Preparation Instructions (continued)", 72, y, 14, True))
+                y -= 22
+            commands.append(pdf_line(line, 72, y, 11))
+            y -= 16
 
     y -= 14
     add_table_header()
@@ -698,7 +745,7 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                 return
             with connect() as db:
                 seva = db.execute(
-                    "SELECT id, name, location, seva_type, volunteers, seva_date, created_at FROM sevas WHERE id = ?",
+                    "SELECT id, name, location, seva_type, volunteers, preparation_instructions, seva_date, created_at FROM sevas WHERE id = ?",
                     (pdf_seva_id,),
                 ).fetchone()
                 if seva is None:
@@ -750,7 +797,7 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                 return
             with connect() as db:
                 sevas = [dict(row) for row in db.execute("""
-                    SELECT id, name, location, seva_type, volunteers, seva_date, created_at
+                    SELECT id, name, location, seva_type, volunteers, preparation_instructions, seva_date, created_at
                     FROM sevas
                     ORDER BY seva_date DESC, created_at DESC, id DESC
                 """)]
@@ -917,8 +964,15 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                     self.json_response({"error": "Please correct the highlighted fields.", "fields": errors}, 422)
                     return
                 cursor = db.execute(
-                    "INSERT INTO sevas (name, location, seva_type, volunteers, seva_date) VALUES (?, ?, ?, ?, ?)",
-                    (values["name"], values["location"], values["seva_type"], values["volunteers"], values["seva_date"]),
+                    "INSERT INTO sevas (name, location, seva_type, volunteers, preparation_instructions, seva_date) VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        values["name"],
+                        values["location"],
+                        values["seva_type"],
+                        values["volunteers"],
+                        values["preparation_instructions"],
+                        values["seva_date"],
+                    ),
                 )
                 seva_id = cursor.lastrowid
                 apply_seva_items(db, seva_id, values["items"])
@@ -979,8 +1033,16 @@ class InventoryHandler(SimpleHTTPRequestHandler):
                     self.json_response({"error": "Please correct the highlighted fields.", "fields": errors}, 422)
                     return
                 db.execute(
-                    "UPDATE sevas SET name = ?, location = ?, seva_type = ?, volunteers = ?, seva_date = ? WHERE id = ?",
-                    (values["name"], values["location"], values["seva_type"], values["volunteers"], values["seva_date"], seva_id),
+                    "UPDATE sevas SET name = ?, location = ?, seva_type = ?, volunteers = ?, preparation_instructions = ?, seva_date = ? WHERE id = ?",
+                    (
+                        values["name"],
+                        values["location"],
+                        values["seva_type"],
+                        values["volunteers"],
+                        values["preparation_instructions"],
+                        values["seva_date"],
+                        seva_id,
+                    ),
                 )
                 apply_seva_items(db, seva_id, values["items"], old_items)
                 notification = process_low_stock_notifications(db)

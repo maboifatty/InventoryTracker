@@ -161,7 +161,7 @@ function renderSevaEditList() {
 }
 function openAddSevaInMaster() {
   editingSevaId = null; sevaPanelMode = 'add'; clearErrors(sevaEditForm); renderSevaEditList();
-  renderSevaDetailPanel({name:'Oakland', location:'', seva_type:'lunch', volunteers: 1, seva_date: todayValue(), items: []}, 'add');
+  renderSevaDetailPanel({name:'Oakland', location:'', seva_type:'lunch', volunteers: 1, preparation_instructions: '', seva_date: todayValue(), items: []}, 'add');
   $('#saveSevaEdit').disabled = false; $('#deleteSeva').disabled = true; $('#printSevaDetails').disabled = true;
 }
 function openSelectedSeva(sevaId) {
@@ -180,6 +180,7 @@ function renderSevaDetailPanel(seva, mode) {
     <label>Seva Date <span>*</span><input name="seva_date" type="date" required value="${esc(seva.seva_date)}"><small class="error"></small></label>
     <label>Type <span>*</span><select name="seva_type" required><option value="breakfast" ${seva.seva_type === 'breakfast' ? 'selected' : ''}>Breakfast</option><option value="lunch" ${seva.seva_type === 'lunch' || !seva.seva_type ? 'selected' : ''}>Lunch</option></select><small class="error"></small></label>
     <label>Number of people served <span>*</span><input name="volunteers" type="number" min="1" step="1" required value="${Number(seva.volunteers || 1)}"><small class="error"></small></label>
+    <label class="full">Preparation Instructions<textarea name="preparation_instructions" rows="5" placeholder="Enter preparation instructions for the seva food items">${esc(seva.preparation_instructions || '')}</textarea><small class="error"></small></label>
     <div class="full seva-items-field">
       <div class="seva-items-head"><strong>Inventory items used</strong><small>Select an inventory item, then enter the quantity used.</small></div>
       <label class="inventory-picker"><select id="sevaInventoryPicker"><option value="">Add inventory item</option>${items.map(item => `<option value="${item.id}">${esc(item.name)} (${number.format(item.quantity)} in inventory)</option>`).join('')}</select></label>
@@ -215,6 +216,7 @@ function sevaPayloadFrom(scope, selector='[data-edit-seva-item-id]') {
     location: '',
     seva_type: scope.seva_type?.value || '',
     volunteers: Number(scope.volunteers?.value || 0),
+    preparation_instructions: scope.preparation_instructions?.value || '',
     seva_date: scope.seva_date.value,
     items: itemInputs.map(input => ({id: Number(input.dataset.itemId || input.dataset.editSevaItemId), quantity: Number(input.value || 0)}))
   };
