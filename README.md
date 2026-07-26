@@ -10,6 +10,60 @@ A dependency-free three-tier inventory management application:
 - **Application tier:** Python HTTP and JSON API
 - **Data tier:** SQLite database (`inventory.db`, created automatically)
 
+## Architecture
+
+```mermaid
+flowchart TD
+    User["User / Browser"]
+
+    subgraph UI["Presentation Layer - HTML/CSS/JavaScript"]
+        Login["Login / Create User / Forgot Password"]
+        Dashboard["Inventory Dashboard"]
+        InventoryMaster["Inventory Master"]
+        SevaMaster["Seva Master"]
+        PDFButton["Print Seva Details"]
+    end
+
+    subgraph App["Application Layer - Python Backend"]
+        AuthAPI["Authentication APIs"]
+        InventoryAPI["Inventory APIs"]
+        SevaAPI["Seva APIs"]
+        AlertService["Low Stock Email Service"]
+        PDFService["PDF Generation Service"]
+    end
+
+    subgraph Data["Data Layer - SQLite Database"]
+        Users["Users / Sessions"]
+        Inventory["Inventory Items"]
+        Sevas["Sevas"]
+        SevaItems["Seva Items Used"]
+        Alerts["Low Stock Alerts"]
+    end
+
+    User --> UI
+
+    Login --> AuthAPI
+    Dashboard --> InventoryAPI
+    InventoryMaster --> InventoryAPI
+    SevaMaster --> SevaAPI
+    PDFButton --> PDFService
+
+    AuthAPI --> Users
+    InventoryAPI --> Inventory
+    InventoryAPI --> Alerts
+    SevaAPI --> Sevas
+    SevaAPI --> SevaItems
+    SevaAPI --> Inventory
+    AlertService --> Alerts
+    AlertService --> Inventory
+    PDFService --> Sevas
+    PDFService --> SevaItems
+    PDFService --> Inventory
+
+    InventoryAPI --> AlertService
+    SevaAPI --> AlertService
+```
+
 ## Run
 
 ```bash
