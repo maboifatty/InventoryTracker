@@ -607,20 +607,6 @@ def build_seva_pdf(seva, items):
         commands.append(pdf_line(f"{label}: {value}", 72, y, 12))
         y -= 20
 
-    instructions = wrap_pdf_text(seva.get("preparation_instructions", ""))
-    if instructions:
-        y -= 8
-        commands.append(pdf_line("Preparation Instructions", 72, y, 14, True))
-        y -= 22
-        for line in instructions:
-            if y < 90:
-                finish_page()
-                start_page()
-                commands.append(pdf_line("Preparation Instructions (continued)", 72, y, 14, True))
-                y -= 22
-            commands.append(pdf_line(line, 72, y, 11))
-            y -= 16
-
     y -= 14
     add_table_header()
     if not items:
@@ -645,6 +631,23 @@ def build_seva_pdf(seva, items):
                 pdf_line(item.get("unit", ""), col_unit, y - 7, 10),
             ])
             y -= row_h
+
+    instructions = wrap_pdf_text(seva.get("preparation_instructions", ""))
+    if instructions:
+        y -= 18
+        if y < 90:
+            finish_page()
+            start_page()
+        commands.append(pdf_line("Preparation Instructions", 72, y, 14, True))
+        y -= 22
+        for line in instructions:
+            if y < 90:
+                finish_page()
+                start_page()
+                commands.append(pdf_line("Preparation Instructions (continued)", 72, y, 14, True))
+                y -= 22
+            commands.append(pdf_line(line, 72, y, 11))
+            y -= 16
     finish_page()
 
     page_count = len(pages)
