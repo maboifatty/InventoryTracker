@@ -18,7 +18,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent
-DB_PATH = ROOT / "inventory.db"
+DATA_DIR = Path(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", str(ROOT)))
+DB_PATH = Path(os.environ.get("DATABASE_PATH", str(DATA_DIR / "inventory.db")))
 RESTOCK_EMAIL_TO = "communitysevainventory@gmail.com"
 SEVA_NAMES = {"Oakland", "Santa Clara", "Fremont"}
 INVENTORY_UNITS = {"crates", "cases", "bottles", "cans"}
@@ -48,6 +49,7 @@ def connect():
 
 
 def initialize_database():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with connect() as db:
         db.execute("""
             CREATE TABLE IF NOT EXISTS inventory (
@@ -1159,8 +1161,10 @@ class InventoryHandler(SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     initialize_database()
-    server = ThreadingHTTPServer(("127.0.0.1", 8000), InventoryHandler)
-    print("Inventory Master is running at http://127.0.0.1:8000")
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "8000"))
+    server = ThreadingHTTPServer((host, port), InventoryHandler)
+    print(f"Inventory Master is running at http://{host}:{port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
