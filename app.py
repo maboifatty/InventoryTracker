@@ -15,7 +15,9 @@ from email.utils import parseaddr
 from html import escape
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlparse
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", str(ROOT)))
@@ -231,15 +233,74 @@ def is_valid_email(value):
     return bool(local and separator and "." in domain and " " not in value)
 
 
-def smtp_settings():
-    host = os.environ.get("SMTP_HOST", "").strip()
-    username = os.environ.get("SMTP_USER", "").strip()
-    password = os.environ.get("SMTP_PASSWORD", "")
-    sender = os.environ.get("SMTP_FROM", username or RESTOCK_EMAIL_TO).strip()
-    port = int(os.environ.get("SMTP_PORT", "587"))
-    use_tls = os.environ.get("SMTP_USE_TLS", "true").lower() != "false"
-    return host, username, password, sender, port, use_tls
+def resend_settings():
+    api_key = os.environ.get("RESEND_API_KEY", "").strip()
+    sender = os.environ.get(
+        "RESEND_FROM",
+        "Community Seva Inventory <no-reply@notifications.communityseva.org>",
+    ).strip()
+    return api_key, sender
 
+
+def send_resend_email(recipient, subject, text, html):
+    api_key, sender = resend_settings()
+    if not api_key or not sender:
+        return {
+            "sent": False,
+            "configured": False,
+            "message": "Resend email is not configured.",
+        }
+
+    payload = json.dumps({
+        "from": sender,
+        "to": [recipient],
+        "subject": subject,
+        "text": text,
+        "html": html,
+    }).encode("utf-8")
+
+    request = Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "Community-Seva-Inventory/1.0",
+        },
+    )
+
+    try:
+        with urlopen(request, timeout=15) as response:
+            response_body = json.loads(response.read().decode("utf-8") or "{}")
+        return {
+            "sent": True,
+            "configured": True,
+            "message": f"Email sent to {recipient}.",
+            "email_id": response_body.get("id", ""),
+        }
+    except HTTPError as exc:
+        try:
+            error_body = json.loads(exc.read().decode("utf-8") or "{}")
+            detail = (
+                error_body.get("message")
+                or error_body.get("name")
+                or str(error_body)
+            )
+        except (ValueError, UnicodeDecodeError):
+            detail = str(exc)
+        return {
+            "sent": False,
+            "configured": True,
+            "message": f"Email could not be sent: {detail}",
+        }
+    except (URLError, TimeoutError, OSError) as exc:
+        reason = getattr(exc, "reason", exc)
+        return {
+            "sent": False,
+            "configured": True,
+            "message": f"Email could not be sent: {reason}",
+        }
 
 def validate(payload, existing=None):
     errors = {}
@@ -330,10 +391,6 @@ def low_stock_items(db):
 
 
 def send_restock_email(items):
-    host, username, password, sender, port, use_tls = smtp_settings()
-    if not host or not username or not password:
-        return {"sent": False, "configured": False, "message": "SMTP email is not configured."}
-
     rows = "".join(
         "<tr>"
         f"<td>{escape(item['name'])}</td>"
@@ -357,59 +414,37 @@ def send_restock_email(items):
     """
     text = "The following inventory items require restock attention:\n\n"
     text += "Item required | Current quantity | Minimum inventory quantity\n"
-    text += "\n".join(f"{item['name']} | {item['quantity']} | {item['reorder_level']}" for item in items)
+    text += "\n".join(
+        f"{item['name']} | {item['quantity']} | {item['reorder_level']}"
+        for item in items
+    )
 
-    message = EmailMessage()
-    message["Subject"] = "Inventory restock attention required"
-    message["From"] = sender
-    message["To"] = RESTOCK_EMAIL_TO
-    message.set_content(text)
-    message.add_alternative(html, subtype="html")
-
-    try:
-        with smtplib.SMTP(host, port, timeout=10) as smtp:
-            if use_tls:
-                smtp.starttls()
-            smtp.login(username, password)
-            smtp.send_message(message)
-        return {"sent": True, "configured": True, "message": f"Email sent to {RESTOCK_EMAIL_TO}."}
-    except Exception as exc:
-        return {"sent": False, "configured": True, "message": f"Email could not be sent: {exc}"}
+    return send_resend_email(
+        RESTOCK_EMAIL_TO,
+        "Inventory restock attention required",
+        text,
+        html,
+    )
 
 
 def send_password_reset_email(recipient, reset_url):
-    host, username, password, sender, port, use_tls = smtp_settings()
-    if not host or not username or not password:
-        return {"sent": False, "configured": False, "message": "SMTP email is not configured."}
-
-    message = EmailMessage()
-    message["Subject"] = "Inventory Master password reset"
-    message["From"] = sender
-    message["To"] = recipient
-    message.set_content(
+    text = (
         "We received a request to reset your Inventory Master password.\n\n"
         f"Reset your password here: {reset_url}\n\n"
         "This link expires in 1 hour. If you did not request this, you can ignore this email."
     )
-    message.add_alternative(
-        f"""
-        <p>We received a request to reset your Inventory Master password.</p>
-        <p><a href="{escape(reset_url)}">Reset your password</a></p>
-        <p>This link expires in 1 hour. If you did not request this, you can ignore this email.</p>
-        """,
-        subtype="html",
+    html = f"""
+    <p>We received a request to reset your Inventory Master password.</p>
+    <p><a href="{escape(reset_url)}">Reset your password</a></p>
+    <p>This link expires in 1 hour. If you did not request this, you can ignore this email.</p>
+    """
+
+    return send_resend_email(
+        recipient,
+        "Inventory Master password reset",
+        text,
+        html,
     )
-
-    try:
-        with smtplib.SMTP(host, port, timeout=10) as smtp:
-            if use_tls:
-                smtp.starttls()
-            smtp.login(username, password)
-            smtp.send_message(message)
-        return {"sent": True, "configured": True, "message": f"Password reset email sent to {recipient}."}
-    except Exception as exc:
-        return {"sent": False, "configured": True, "message": f"Password reset email could not be sent: {exc}"}
-
 
 def process_low_stock_notifications(db):
     current_items = low_stock_items(db)
